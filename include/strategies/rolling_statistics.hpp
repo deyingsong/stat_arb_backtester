@@ -45,7 +45,7 @@ private:
 public:
     explicit RollingStatistics(size_t window_size, double ema_alpha = 0.0)
         : window_size_(window_size), ema_alpha_(ema_alpha) {
-        values_.reserve(window_size);
+        // Note: std::deque doesn't have reserve() method, so we remove this call
     }
     
     // Update with new value using Welford's online algorithm for numerical stability
@@ -181,8 +181,7 @@ private:
 public:
     explicit RollingCorrelation(size_t window_size)
         : window_size_(window_size) {
-        x_values_.reserve(window_size);
-        y_values_.reserve(window_size);
+        // Note: std::deque doesn't have reserve() method
     }
     
     void update(double x, double y) {
@@ -263,8 +262,7 @@ private:
 public:
     explicit RollingBeta(size_t window_size)
         : window_size_(window_size) {
-        asset_returns_.reserve(window_size);
-        market_returns_.reserve(window_size);
+        // Note: std::deque doesn't have reserve() method
     }
     
     void update(double asset_return, double market_return) {
@@ -334,162 +332,6 @@ public:
         beta_ = 0.0;
         alpha_ = 0.0;
         r_squared_ = 0.0;
-    }
-};
-
-// ============================================================================
-// Cointegration Analyzer for Pairs Trading
-// ============================================================================
-
-class CointegrationAnalyzer {
-private:
-    // Augmented Dickey-Fuller test critical values (5% significance)
-    static constexpr double ADF_CRITICAL_VALUE = -2.86;  // Simplified
-    
-    // Calculate ADF test statistic (simplified version)
-    double calculateADF(const std::vector<double>& series) {
-        if (series.size() < 20) return 0.0;
-        
-        // Create differenced series
-        std::vector<double> diff_series;
-        for (size_t i = 1; i < series.size(); ++i) {
-            diff_series.push_back(series[i] - series[i-1]);
-        }
-        
-        // Regression: diff_y = alpha + beta * y_lag + error
-        double sum_y_lag = 0.0;
-        double sum_diff = 0.0;
-        double sum_y_lag_sq = 0.0;
-        double sum_y_lag_diff = 0.0;
-        
-        for (size_t i = 0; i < diff_series.size(); ++i) {
-            double y_lag = series[i];  // Lagged value
-            double diff = diff_series[i];
-            
-            sum_y_lag += y_lag;
-            sum_diff += diff;
-            sum_y_lag_sq += y_lag * y_lag;
-            sum_y_lag_diff += y_lag * diff;
-        }
-        
-        size_t n = diff_series.size();
-        double mean_y_lag = sum_y_lag / n;
-        double mean_diff = sum_diff / n;
-        
-        // Calculate beta (coefficient of lagged y)
-        double numerator = sum_y_lag_diff - n * mean_y_lag * mean_diff;
-        double denominator = sum_y_lag_sq - n * mean_y_lag * mean_y_lag;
-        
-        if (denominator == 0) return 0.0;
-        
-        double beta = numerator / denominator;
-        
-        // Calculate standard error (simplified)
-        double sse = 0.0;
-        for (size_t i = 0; i < diff_series.size(); ++i) {
-            double predicted = mean_diff + beta * (series[i] - mean_y_lag);
-            double error = diff_series[i] - predicted;
-            sse += error * error;
-        }
-        
-        double se = std::sqrt(sse / (n - 2) / denominator);
-        
-        // ADF test statistic
-        return se > 0 ? beta / se : 0.0;
-    }
-    
-public:
-    struct CointegrationResult {
-        double hedge_ratio;
-        double adf_statistic;
-        double p_value;  // Simplified p-value
-        bool is_cointegrated;
-        double half_life;  // Mean reversion half-life
-    };
-    
-    // Test for cointegration between two price series
-    CointegrationResult testCointegration(const std::vector<double>& prices1,
-                                         const std::vector<double>& prices2) {
-        CointegrationResult result;
-        result.hedge_ratio = 1.0;
-        result.adf_statistic = 0.0;
-        result.p_value = 1.0;
-        result.is_cointegrated = false;
-        result.half_life = 0.0;
-        
-        if (prices1.size() != prices2.size() || prices1.size() < 20) {
-            return result;
-        }
-        
-        // Step 1: Calculate hedge ratio using OLS
-        double mean1 = std::accumulate(prices1.begin(), prices1.end(), 0.0) / prices1.size();
-        double mean2 = std::accumulate(prices2.begin(), prices2.end(), 0.0) / prices2.size();
-        
-        double covariance = 0.0;
-        double variance2 = 0.0;
-        
-        for (size_t i = 0; i < prices1.size(); ++i) {
-            double diff1 = prices1[i] - mean1;
-            double diff2 = prices2[i] - mean2;
-            covariance += diff1 * diff2;
-            variance2 += diff2 * diff2;
-        }
-        
-        if (variance2 > 0) {
-            result.hedge_ratio = covariance / variance2;
-        }
-        
-        // Step 2: Calculate spread and test for stationarity
-        std::vector<double> spread;
-        for (size_t i = 0; i < prices1.size(); ++i) {
-            spread.push_back(prices1[i] - result.hedge_ratio * prices2[i]);
-        }
-        
-        // Step 3: Run ADF test on spread
-        result.adf_statistic = calculateADF(spread);
-        
-        // Simplified p-value calculation
-        if (result.adf_statistic < ADF_CRITICAL_VALUE) {
-            result.is_cointegrated = true;
-            result.p_value = 0.01;  // Simplified
-        } else {
-            result.p_value = 0.5;  // Simplified
-        }
-        
-        // Step 4: Calculate half-life of mean reversion
-        if (result.is_cointegrated) {
-            // Use OLS on spread changes
-            std::vector<double> spread_changes;
-            std::vector<double> lagged_spread;
-            
-            for (size_t i = 1; i < spread.size(); ++i) {
-                spread_changes.push_back(spread[i] - spread[i-1]);
-                lagged_spread.push_back(spread[i-1]);
-            }
-            
-            // Simple regression
-            double mean_change = std::accumulate(spread_changes.begin(), spread_changes.end(), 0.0) 
-                                / spread_changes.size();
-            double mean_lag = std::accumulate(lagged_spread.begin(), lagged_spread.end(), 0.0) 
-                             / lagged_spread.size();
-            
-            double num = 0.0;
-            double den = 0.0;
-            
-            for (size_t i = 0; i < spread_changes.size(); ++i) {
-                num += (lagged_spread[i] - mean_lag) * (spread_changes[i] - mean_change);
-                den += (lagged_spread[i] - mean_lag) * (lagged_spread[i] - mean_lag);
-            }
-            
-            if (den > 0) {
-                double lambda = num / den;
-                if (lambda < 0 && lambda > -1) {
-                    result.half_life = -std::log(2) / std::log(1 + lambda);
-                }
-            }
-        }
-        
-        return result;
     }
 };
 

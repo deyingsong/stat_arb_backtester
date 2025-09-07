@@ -30,30 +30,54 @@ class StatArbStrategy : public IStrategy {
 public:
     struct PairConfig {
         // Pair selection parameters
-        double cointegration_pvalue_threshold = 0.05;  // Max p-value for cointegration test
-        size_t lookback_period = 252;  // Days for cointegration test
-        size_t recalibration_frequency = 21;  // Recalibrate every N trading days
+        double cointegration_pvalue_threshold;  // Max p-value for cointegration test
+        size_t lookback_period;  // Days for cointegration test
+        size_t recalibration_frequency;  // Recalibrate every N trading days
         
         // Signal generation parameters
-        double entry_zscore_threshold = 2.0;
-        double exit_zscore_threshold = 0.5;
-        double stop_loss_zscore = 4.0;
-        size_t zscore_window = 60;  // Rolling window for z-score calculation
+        double entry_zscore_threshold;
+        double exit_zscore_threshold;
+        double stop_loss_zscore;
+        size_t zscore_window;  // Rolling window for z-score calculation
         
         // Risk management
-        double max_position_value = 100000.0;  // Max $ exposure per pair
-        double max_pairs = 10;  // Maximum concurrent pairs
-        double min_half_life = 5;  // Minimum mean reversion half-life (days)
-        double max_half_life = 120;  // Maximum mean reversion half-life
+        double max_position_value;  // Max $ exposure per pair
+        double max_pairs;  // Maximum concurrent pairs
+        double min_half_life;  // Minimum mean reversion half-life (days)
+        double max_half_life;  // Maximum mean reversion half-life
         
         // Execution
-        bool use_dynamic_hedge_ratio = true;
-        double hedge_ratio_ema_alpha = 0.95;  // EMA smoothing for hedge ratio
-        bool enable_intraday_execution = false;
+        bool use_dynamic_hedge_ratio;
+        double hedge_ratio_ema_alpha;  // EMA smoothing for hedge ratio
+        bool enable_intraday_execution;
         
         // Filters
-        double min_liquidity = 1000000.0;  // Minimum daily dollar volume
-        double max_spread_bps = 10.0;  // Maximum bid-ask spread in basis points
+        double min_liquidity;  // Minimum daily dollar volume
+        double max_spread_bps;  // Maximum bid-ask spread in basis points
+        
+        // Default constructor
+        PairConfig()
+            : cointegration_pvalue_threshold(0.05)
+            , lookback_period(252)
+            , recalibration_frequency(21)
+            , entry_zscore_threshold(2.0)
+            , exit_zscore_threshold(0.5)
+            , stop_loss_zscore(4.0)
+            , zscore_window(60)
+            , max_position_value(100000.0)
+            , max_pairs(10)
+            , min_half_life(5)
+            , max_half_life(120)
+            , use_dynamic_hedge_ratio(true)
+            , hedge_ratio_ema_alpha(0.95)
+            , enable_intraday_execution(false)
+            , min_liquidity(1000000.0)
+            , max_spread_bps(10.0) {}
+        
+        // Static factory for default config
+        static PairConfig getDefault() {
+            return PairConfig();
+        }
     };
     
     struct PairState {

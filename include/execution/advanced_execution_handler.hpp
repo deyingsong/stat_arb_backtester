@@ -44,52 +44,86 @@ public:
     
     struct AdvancedExecutionConfig {
         // Market impact parameters
-        ImpactModel impact_model = ImpactModel::SQUARE_ROOT;
-        double permanent_impact_coefficient = 0.1;  // Permanent price impact
-        double temporary_impact_coefficient = 0.5;  // Temporary price impact
-        double impact_decay_rate = 0.5;  // Decay rate for temporary impact
+        ImpactModel impact_model;
+        double permanent_impact_coefficient;  // Permanent price impact
+        double temporary_impact_coefficient;  // Temporary price impact
+        double impact_decay_rate;  // Decay rate for temporary impact
         
         // Almgren-Chriss model parameters
-        double eta = 2.5e-7;  // Permanent impact constant
-        double gamma = 2.5e-7;  // Temporary impact constant
-        double alpha = 0.5;  // Power for permanent impact (0.5 = square root)
-        double beta = 0.5;   // Power for temporary impact
+        double eta;  // Permanent impact constant
+        double gamma;  // Temporary impact constant
+        double alpha;  // Power for permanent impact (0.5 = square root)
+        double beta;   // Power for temporary impact
         
         // Slippage model parameters
-        SlippageModel slippage_model = SlippageModel::HYBRID;
-        double base_slippage_bps = 2.0;
-        double volatility_multiplier = 1.5;
-        double participation_penalty = 10.0;  // BPS per 1% of ADV
+        SlippageModel slippage_model;
+        double base_slippage_bps;
+        double volatility_multiplier;
+        double participation_penalty;  // BPS per 1% of ADV
         
         // Order book simulation
-        bool simulate_order_book = true;
-        double book_depth_factor = 0.1;  // Fraction of ADV available at each price level
-        double tick_size = 0.01;
-        size_t book_levels = 10;
+        bool simulate_order_book;
+        double book_depth_factor;  // Fraction of ADV available at each price level
+        double tick_size;
+        size_t book_levels;
         
         // Latency and rejection
-        std::chrono::microseconds min_latency{100};
-        std::chrono::microseconds max_latency{1000};
-        double rejection_probability = 0.02;
-        double partial_fill_probability = 0.1;
+        std::chrono::microseconds min_latency;
+        std::chrono::microseconds max_latency;
+        double rejection_probability;
+        double partial_fill_probability;
         
         // Transaction costs
-        double commission_per_share = 0.005;
-        double min_commission = 1.0;
-        double sec_fee_per_million = 22.10;  // SEC transaction fee
-        double taf_fee_per_share = 0.000119;  // FINRA TAF
+        double commission_per_share;
+        double min_commission;
+        double sec_fee_per_million;  // SEC transaction fee
+        double taf_fee_per_share;  // FINRA TAF
         
         // Risk limits
-        double max_order_size_pct_adv = 0.10;  // Max 10% of ADV
-        double max_participation_rate = 0.25;   // Max 25% of volume
+        double max_order_size_pct_adv;  // Max 10% of ADV
+        double max_participation_rate;   // Max 25% of volume
         
         // Advanced features
-        bool enable_dark_pool = false;
-        double dark_pool_probability = 0.3;
-        double dark_pool_improvement_bps = 0.5;
+        bool enable_dark_pool;
+        double dark_pool_probability;
+        double dark_pool_improvement_bps;
         
-        bool enable_iceberg_orders = false;
-        double iceberg_display_ratio = 0.1;  // Show only 10% of order
+        bool enable_iceberg_orders;
+        double iceberg_display_ratio;  // Show only 10% of order
+        
+        // Default constructor
+        AdvancedExecutionConfig()
+            : impact_model(ImpactModel::SQUARE_ROOT)
+            , permanent_impact_coefficient(0.1)
+            , temporary_impact_coefficient(0.5)
+            , impact_decay_rate(0.5)
+            , eta(2.5e-7)
+            , gamma(2.5e-7)
+            , alpha(0.5)
+            , beta(0.5)
+            , slippage_model(SlippageModel::HYBRID)
+            , base_slippage_bps(2.0)
+            , volatility_multiplier(1.5)
+            , participation_penalty(10.0)
+            , simulate_order_book(true)
+            , book_depth_factor(0.1)
+            , tick_size(0.01)
+            , book_levels(10)
+            , min_latency(std::chrono::microseconds{100})
+            , max_latency(std::chrono::microseconds{1000})
+            , rejection_probability(0.02)
+            , partial_fill_probability(0.1)
+            , commission_per_share(0.005)
+            , min_commission(1.0)
+            , sec_fee_per_million(22.10)
+            , taf_fee_per_share(0.000119)
+            , max_order_size_pct_adv(0.10)
+            , max_participation_rate(0.25)
+            , enable_dark_pool(false)
+            , dark_pool_probability(0.3)
+            , dark_pool_improvement_bps(0.5)
+            , enable_iceberg_orders(false)
+            , iceberg_display_ratio(0.1) {}
     };
     
 private:

@@ -157,8 +157,9 @@ public:
     
     // Constructor with custom config
     explicit BasicPortfolio(const PortfolioConfig& config)
-        : config_(config), cash_(config.initial_capital), 
-          initial_capital_(config.initial_capital) {}
+        : cash_(config.initial_capital), 
+          initial_capital_(config.initial_capital),
+          config_(config) {}
     
     // IPortfolio interface implementation
     void initialize(double initial_capital) override {
