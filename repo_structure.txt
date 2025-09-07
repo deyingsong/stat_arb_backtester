@@ -1,9 +1,52 @@
 .
+├── CMakeLists.txt
 ├── README.md
+├── README_PHASE1.md
+├── data
+│   ├── AAPL.csv
+│   ├── GOOGL.csv
+│   └── prices.csv
 ├── include
+│   ├── backtester.hpp
+│   ├── builders
+│   │   └── event_builders.hpp
+│   ├── concurrent
+│   │   ├── disruptor_queue.hpp
+│   │   └── event_pool.hpp
+│   ├── core
+│   │   ├── event_types.hpp
+│   │   └── exceptions.hpp
+│   ├── data
+│   │   └── csv_data_handler.hpp
+│   ├── data_loader.hpp
+│   ├── engine
+│   │   ├── cerebro.hpp
+│   │   └── event_dispatcher.hpp
 │   ├── event_system.hpp
+│   ├── execution
+│   │   └── simulated_execution_handler.hpp
+│   ├── interfaces
+│   │   ├── data_handler.hpp
+│   │   ├── execution_handler.hpp
+│   │   ├── portfolio.hpp
+│   │   └── strategy.hpp
+│   ├── portfolio
+│   │   └── basic_portfolio.hpp
+│   └── strategies
+│       └── simple_ma_strategy.hpp
 ├── repo_structure.txt
 ├── src
+│   └── main.cpp
+├── test
+│   ├── test_core_infrastructure.cpp
+│   ├── test_end_to_end_system.cpp
+│   └── test_signal_generator.cpp
 ├── test.cpp
+├── test_phase1
+├── test_phase2
 ├── test_program
+└── third_party
+    └── Eigen
+        └── eigen.hpp
 
+16 directories, 34 files
