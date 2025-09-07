@@ -1,0 +1,49 @@
+# Makefile for Phase 3: Statistical Arbitrage Features
+# Compiles the test program with all required components
+
+CXX = g++
+CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -pthread
+INCLUDES = -I./include
+
+# Source files
+TEST_SRC = test/test_stat_arb_system.cpp
+
+# Output binary
+TEST_BIN = test_phase3
+
+# Default target
+all: $(TEST_BIN)
+
+# Compile test program
+$(TEST_BIN): $(TEST_SRC)
+	@echo "Compiling Phase 3 test program..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+	@echo "Build complete: $(TEST_BIN)"
+
+# Run the test
+run: $(TEST_BIN)
+	@echo "Running Phase 3 Statistical Arbitrage test..."
+	./$(TEST_BIN)
+
+# Clean build artifacts
+clean:
+	rm -f $(TEST_BIN)
+	rm -f data/STOCK_*.csv
+	@echo "Cleaned build artifacts"
+
+# Create necessary directories
+dirs:
+	mkdir -p data
+	mkdir -p include/strategies
+	mkdir -p include/execution
+
+# Help target
+help:
+	@echo "Phase 3 Makefile targets:"
+	@echo "  make         - Build the test program"
+	@echo "  make run     - Build and run the test"
+	@echo "  make clean   - Clean build artifacts"
+	@echo "  make dirs    - Create necessary directories"
+	@echo "  make help    - Show this help message"
+
+.PHONY: all run clean dirs help
