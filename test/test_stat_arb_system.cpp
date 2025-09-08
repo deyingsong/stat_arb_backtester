@@ -33,11 +33,15 @@ void createCorrelatedPairData(const std::string& symbol1, const std::string& sym
     std::mt19937 rng(42);
     std::normal_distribution<> noise(0, 1);
     
-    // Generate base price series
+    // Generate base price series with more volatility for signal generation
     std::vector<double> prices1, prices2;
     double price1 = 100.0, price2 = 50.0;
     double drift1 = 0.0002, drift2 = 0.0001;
-    double vol1 = 0.015, vol2 = 0.020;
+    double vol1 = 0.025, vol2 = 0.030;  // Increased volatility
+    
+    // Create a mean-reverting spread with periodic divergences
+    double spread_target = price1 - 2.0 * price2;
+    double spread_current = spread_target;
     
     for (int i = 0; i < days; ++i) {
         // Generate correlated returns
@@ -51,12 +55,31 @@ void createCorrelatedPairData(const std::string& symbol1, const std::string& sym
         price1 *= (1 + return1);
         price2 *= (1 + return2);
         
-        // Add mean-reverting spread component
-        double spread = price1 - 2.0 * price2;
-        double mean_reversion = -0.01 * spread;  // Mean reversion strength
+        // Add mean-reverting spread component with periodic shocks
+        spread_current = price1 - 2.0 * price2;
+        double mean_reversion_strength = 0.05;  // Increased for stronger mean reversion
         
-        price1 += mean_reversion * 0.5;
-        price2 -= mean_reversion * 0.25;
+        // Add periodic spread divergences to create trading opportunities
+        if (i % 30 == 15) {
+            // Create positive spread divergence
+            double shock = 3.0 + noise(rng) * 1.0;
+            price1 *= (1 + shock * 0.01);
+            price2 *= (1 - shock * 0.005);
+        } else if (i % 30 == 0) {
+            // Create negative spread divergence
+            double shock = -3.0 + noise(rng) * 1.0;
+            price1 *= (1 + shock * 0.01);
+            price2 *= (1 - shock * 0.005);
+        } else {
+            // Normal mean reversion
+            double spread_diff = spread_target - spread_current;
+            price1 += spread_diff * mean_reversion_strength * 0.7;
+            price2 -= spread_diff * mean_reversion_strength * 0.3;
+        }
+        
+        // Ensure prices stay positive
+        price1 = std::max(1.0, price1);
+        price2 = std::max(1.0, price2);
         
         prices1.push_back(price1);
         prices2.push_back(price2);
@@ -395,14 +418,14 @@ int main(int argc, char* argv[]) {
         
         // Statistical Arbitrage Strategy
         StatArbStrategy::PairConfig pair_config;
-        pair_config.entry_zscore_threshold = 2.0;
+        pair_config.entry_zscore_threshold = 1.5;
         pair_config.exit_zscore_threshold = 0.5;
         pair_config.stop_loss_zscore = 3.5;
-        pair_config.zscore_window = 30;
-        pair_config.lookback_period = 60;
+        pair_config.zscore_window = 20;
+        pair_config.lookback_period = 40;
         pair_config.recalibration_frequency = 20;
         pair_config.use_dynamic_hedge_ratio = true;
-        pair_config.min_half_life = 5;
+        pair_config.min_half_life = 2;
         pair_config.max_half_life = 60;
         
         auto strategy = std::make_unique<StatArbStrategy>(pair_config, "StatArb_Pairs");
