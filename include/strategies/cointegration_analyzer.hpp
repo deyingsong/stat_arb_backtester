@@ -8,6 +8,7 @@
 #include <cmath>
 #include <numeric>
 #include <algorithm>
+#include <iostream>
 
 namespace backtesting {
 
@@ -162,6 +163,9 @@ public:
         } else {
             return result;  // Cannot calculate hedge ratio
         }
+
+        // Debug: report hedge ratio
+        std::cout << "[Coint] Hedge ratio: " << result.hedge_ratio << "\n";
         
         // Step 2: Calculate spread using hedge ratio
         std::vector<double> spread;
@@ -184,6 +188,7 @@ public:
         // Step 3: Run ADF test on spread
         result.adf_statistic = calculateADF(spread);
         result.p_value = calculatePValue(result.adf_statistic, spread.size());
+    std::cout << "[Coint] ADF stat: " << result.adf_statistic << ", p-value: " << result.p_value << "\n";
         
         // Determine if cointegrated
         result.is_cointegrated = (result.p_value < significance_level);
@@ -191,6 +196,7 @@ public:
         // Step 4: Calculate half-life of mean reversion if cointegrated
         if (result.is_cointegrated) {
             result.half_life = calculateHalfLife(spread);
+            std::cout << "[Coint] Half-life: " << result.half_life << "\n";
         }
         
         return result;
@@ -235,15 +241,18 @@ public:
         if (std::abs(denominator) < 1e-10) return 0.0;
         
         double beta = numerator / denominator;
-        
-        // Calculate half-life
-        if (beta < 0 && beta > -1) {
-            // Mean reverting
+        std::cout << "[Coint::half] beta=" << beta << ", numerator=" << numerator << ", denominator=" << denominator << "\n";
+
+        // Calculate half-life using continuous OU approximation: half-life = ln(2) / (-beta)
+        // Accept any negative beta as mean-reverting (beta < 0). Guard tiny beta values.
+        if (beta < 0.0) {
             double lambda = -beta;
-            return std::log(2.0) / lambda;
+            if (lambda > 1e-12) {
+                return std::log(2.0) / lambda;
+            }
         }
-        
-        return 0.0;  // No mean reversion or explosive process
+
+        return 0.0;  // No mean reversion detected
     }
     
     // Engle-Granger two-step cointegration test

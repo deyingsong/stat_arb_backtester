@@ -70,8 +70,10 @@ echo ""
 # Compilation flags
 CXXFLAGS="-std=c++17 -O3 -Wall -Wextra -pthread"
 INCLUDES="-I./include"
-SOURCE="test/test_stat_arb_system.cpp"
-OUTPUT="test_phase3"
+SOURCE_GLOB="test/*.cpp"
+BIN_DIR="bin"
+
+mkdir -p $BIN_DIR
 
 # Clean previous build
 if [ -f "$OUTPUT" ]; then
@@ -87,50 +89,56 @@ echo "Compiler: $COMPILER"
 echo "Flags: $CXXFLAGS"
 echo ""
 
-$COMPILER $CXXFLAGS $INCLUDES -o $OUTPUT $SOURCE
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Compilation successful!${NC}"
-    echo ""
-    
-    # Check if user wants to run immediately
-    if [ "$1" == "run" ]; then
-        echo "=========================================="
-        echo "Running Phase 3 Test Program"
-        echo "=========================================="
-        echo ""
-        ./$OUTPUT
-        EXIT_CODE=$?
-        
-        if [ $EXIT_CODE -eq 0 ]; then
-            echo ""
-            echo -e "${GREEN}=========================================="
-            echo "Test completed successfully!"
-            echo "==========================================${NC}"
-        else
-            echo ""
-            echo -e "${RED}=========================================="
-            echo "Test failed with exit code: $EXIT_CODE"
-            echo "==========================================${NC}"
-        fi
+FAILED=0
+for src in $SOURCE_GLOB; do
+    exe_name=$(basename "$src" .cpp)
+    out_path="$BIN_DIR/$exe_name"
+    echo "Compiling $src -> $out_path"
+    $COMPILER $CXXFLAGS $INCLUDES -o "$out_path" "$src"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}✗ Failed to compile $src${NC}"
+        FAILED=1
     else
-        echo "Build complete. To run the test program:"
-        echo "  ./$OUTPUT"
-        echo ""
-        echo "Or rebuild and run with:"
-        echo "  ./build_phase3.sh run"
+        echo -e "${GREEN}✓ Compiled $src${NC}"
     fi
-else
-    echo -e "${RED}✗ Compilation failed${NC}"
-    echo ""
-    echo "Common issues:"
-    echo "  1. Missing header files - ensure all Phase 1-3 headers are in place"
-    echo "  2. Compiler version - ensure C++17 support"
-    echo "  3. Missing dependencies - check all includes are available"
-    echo ""
-    echo "For detailed error output, run:"
-    echo "  $COMPILER $CXXFLAGS $INCLUDES -o $OUTPUT $SOURCE 2>&1 | less"
+done
+
+if [ $FAILED -ne 0 ]; then
+    echo -e "${RED}✗ One or more compilations failed${NC}"
     exit 1
+else
+    echo -e "${GREEN}✓ All tests compiled successfully${NC}"
+fi
+
+if [ "$1" == "run" ]; then
+    echo "=========================================="
+    echo "Running Test Binaries"
+    echo "=========================================="
+    echo ""
+    overall_exit=0
+    for exe in $BIN_DIR/*; do
+        echo "Running $exe"
+        "$exe"
+        code=$?
+        if [ $code -ne 0 ]; then
+            echo -e "${RED}$exe failed (exit $code)${NC}"
+            overall_exit=1
+        else
+            echo -e "${GREEN}$exe passed${NC}"
+        fi
+        echo ""
+    done
+
+    if [ $overall_exit -eq 0 ]; then
+        echo -e "${GREEN}=========================================="
+        echo "All tests passed!"
+        echo "==========================================${NC}"
+    else
+        echo -e "${RED}=========================================="
+        echo "One or more tests failed"
+        echo "==========================================${NC}"
+    fi
+    exit $overall_exit
 fi
 
 

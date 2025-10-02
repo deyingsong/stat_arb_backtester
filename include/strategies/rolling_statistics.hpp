@@ -30,7 +30,7 @@ private:
     double std_dev_ = 0.0;
     
     // For numerical stability using Welford's algorithm
-    double M2_ = 0.0;  // Sum of squared differences from mean
+    double M2_ = 0.0;  // (retained for compatibility, not used in sliding window mode)
     size_t count_ = 0;
     
     // Additional statistics
@@ -50,24 +50,15 @@ public:
     
     // Update with new value using Welford's online algorithm for numerical stability
     void update(double value) {
-        // Add new value
+        // Add new value to window and update aggregate sums
         values_.push_back(value);
-        count_++;
-        
-        // Update running sums
-        double delta = value - mean_;
-        mean_ += delta / count_;
-        double delta2 = value - mean_;
-        M2_ += delta * delta2;
-        
-        // Update simple sums (for alternative calculations)
         sum_ += value;
         sum_squares_ += value * value;
-        
+
         // Update min/max
         if (value < min_value_) min_value_ = value;
         if (value > max_value_) max_value_ = value;
-        
+
         // Update EMA if configured
         if (ema_alpha_ > 0) {
             if (!ema_initialized_) {
@@ -77,34 +68,41 @@ public:
                 ema_value_ = ema_alpha_ * value + (1 - ema_alpha_) * ema_value_;
             }
         }
-        
-        // Remove old value if window is full
+
+        // If window exceeded, remove oldest value and adjust aggregates
         if (values_.size() > window_size_) {
             double old_value = values_.front();
             values_.pop_front();
-            
-            // Update statistics after removal
-            double old_delta = old_value - mean_;
-            mean_ = (sum_ - old_value) / (count_ - 1);
-            double new_delta = old_value - mean_;
-            M2_ -= old_delta * new_delta;
-            
             sum_ -= old_value;
             sum_squares_ -= old_value * old_value;
-            count_--;
-            
+
             // Recalculate min/max if necessary
             if (old_value == min_value_ || old_value == max_value_) {
-                auto [min_it, max_it] = std::minmax_element(values_.begin(), values_.end());
-                min_value_ = *min_it;
-                max_value_ = *max_it;
+                if (!values_.empty()) {
+                    auto [min_it, max_it] = std::minmax_element(values_.begin(), values_.end());
+                    min_value_ = *min_it;
+                    max_value_ = *max_it;
+                } else {
+                    min_value_ = std::numeric_limits<double>::max();
+                    max_value_ = std::numeric_limits<double>::lowest();
+                }
             }
         }
-        
-        // Update variance and standard deviation
+
+        // Update count, mean, variance, stddev using aggregated sums (robust for sliding window)
+        count_ = values_.size();
+        if (count_ > 0) {
+            mean_ = sum_ / static_cast<double>(count_);
+        } else {
+            mean_ = 0.0;
+        }
+
         if (count_ > 1) {
-            variance_ = M2_ / (count_ - 1);  // Sample variance
-            std_dev_ = std::sqrt(variance_);
+            // Sample variance: (Σx^2 - n*mean^2) / (n-1)
+            double ss = sum_squares_ - static_cast<double>(count_) * mean_ * mean_;
+            variance_ = ss / static_cast<double>(count_ - 1);
+            if (variance_ < 0 && variance_ > -1e-12) variance_ = 0.0; // guard against tiny negative
+            std_dev_ = std::sqrt(std::max(0.0, variance_));
         } else {
             variance_ = 0.0;
             std_dev_ = 0.0;

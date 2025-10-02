@@ -19,6 +19,7 @@
 #include "../concurrent/disruptor_queue.hpp"
 #include "rolling_statistics.hpp"
 #include "cointegration_analyzer.hpp"
+#include <iostream>
 
 namespace backtesting {
 
@@ -73,6 +74,9 @@ public:
             , enable_intraday_execution(false)
             , min_liquidity(1000000.0)
             , max_spread_bps(10.0) {}
+
+        // Toggle verbose debug printing
+        bool verbose = false;
         
         // Static factory for default config
         static PairConfig getDefault() {
@@ -213,12 +217,16 @@ private:
         }
         
         if (denominator > 0) {
-            double lambda = numerator / denominator;
-            if (lambda < 0 && lambda > -1) {
-                return -std::log(2) / std::log(1 + lambda);
+            double beta = numerator / denominator; // regression slope (should be negative for mean reversion)
+            if (config_.verbose) std::cout << "[Strategy::half] beta=" << beta << ", numerator=" << numerator << ", denominator=" << denominator << std::endl;
+            if (beta < 0.0) {
+                double lambda = -beta;
+                if (lambda > 1e-12) {
+                    return std::log(2.0) / lambda;
+                }
             }
         }
-        
+
         return 0.0;  // No mean reversion detected
     }
     
@@ -253,9 +261,11 @@ private:
         // Calculate half-life
         pair.half_life = calculateHalfLife(pair.spread_history);
         
-        // Check if pair is still valid
-        if (pair.half_life < config_.min_half_life || pair.half_life > config_.max_half_life) {
-            pair.is_active = false;  // Deactivate pair if mean reversion is too slow/fast
+        // Activate/deactivate pair based on half-life bounds
+        if (pair.half_life >= config_.min_half_life && pair.half_life <= config_.max_half_life) {
+            pair.is_active = true;
+        } else {
+            pair.is_active = false;
         }
         
         pair.bars_since_recalibration = 0;
@@ -264,29 +274,46 @@ private:
     
     // Generate trading signals for a pair
     void generatePairSignals(PairState& pair, const MarketEvent& event) {
+        if (config_.verbose) std::cout << "generatePairSignals called for " << pair.symbol1 << "-" << pair.symbol2 << std::endl;
+        
+        // Update current spread and z-score
         // Update current spread and z-score
         pair.current_spread = calculateSpread(pair.latest_price1, pair.latest_price2, pair.hedge_ratio);
         pair.spread_stats.update(pair.current_spread);
         
-        if (pair.spread_std > 0) {
-            pair.current_zscore = (pair.current_spread - pair.spread_stats.getMean()) / 
-                                 pair.spread_stats.getStdDev();
+        // Use the rolling statistics' stddev (fresh) for z-score calculation
+        double spread_std = pair.spread_stats.getStdDev();
+        pair.spread_std = spread_std; // keep cached value in sync
+        if (spread_std > 0.0) {
+            pair.current_zscore = (pair.current_spread - pair.spread_stats.getMean()) / spread_std;
         } else {
             pair.current_zscore = 0.0;
         }
         
+    if (config_.verbose) std::cout << "Z-score for pair " << pair.symbol1 << "-" << pair.symbol2 << ": " << pair.current_zscore << std::endl;
+        
         // Check liquidity filter
         bool liquidity_ok = true;
+        double dollar_volume1 = 0.0;
+        double dollar_volume2 = 0.0;
         auto vol1_it = average_volumes_.find(pair.symbol1);
         auto vol2_it = average_volumes_.find(pair.symbol2);
         if (vol1_it != average_volumes_.end() && vol2_it != average_volumes_.end()) {
-            double dollar_volume1 = vol1_it->second * pair.latest_price1;
-            double dollar_volume2 = vol2_it->second * pair.latest_price2;
+            dollar_volume1 = vol1_it->second * pair.latest_price1;
+            dollar_volume2 = vol2_it->second * pair.latest_price2;
             liquidity_ok = (dollar_volume1 >= config_.min_liquidity && 
                            dollar_volume2 >= config_.min_liquidity);
         }
         
-        if (!liquidity_ok || !pair.is_active) return;
+        // Debug: print average volumes used in liquidity check
+        double avg_vol1 = (vol1_it != average_volumes_.end()) ? vol1_it->second : 0.0;
+        double avg_vol2 = (vol2_it != average_volumes_.end()) ? vol2_it->second : 0.0;
+    if (config_.verbose) std::cout << "Liquidity check for pair " << pair.symbol1 << "-" << pair.symbol2 << ": " << liquidity_ok << " (avg_vol1: " << avg_vol1 << ", avg_vol2: " << avg_vol2 << ", dollar1: " << dollar_volume1 << ", dollar2: " << dollar_volume2 << ", min: " << config_.min_liquidity << ")" << std::endl;
+        
+        if (!liquidity_ok || !pair.is_active) {
+            if (config_.verbose) std::cout << "Skipping signal generation for pair " << pair.symbol1 << "-" << pair.symbol2 << ": liquidity_ok=" << liquidity_ok << ", is_active=" << pair.is_active << std::endl;
+            return;
+        }
         
         // Signal generation logic
         SignalEvent signal;
@@ -346,6 +373,7 @@ private:
                 }
                 
                 signals_generated_ += 2;  // Two signals per pair trade
+                if (config_.verbose) std::cout << "Generated entry signals for pair " << pair.symbol1 << "-" << pair.symbol2 << std::endl;
             }
             
         } else {
@@ -399,6 +427,7 @@ private:
                 pair.entry_zscore = 0.0;
                 
                 signals_generated_ += 2;
+                if (config_.verbose) std::cout << "Generated exit signals for pair " << pair.symbol1 << "-" << pair.symbol2 << " reason: " << exit_reason << std::endl;
             }
         }
     }
@@ -407,6 +436,7 @@ public:
     explicit StatArbStrategy(const PairConfig& config = PairConfig(), 
                             const std::string& name = "StatArb")
         : config_(config), strategy_name_(name) {
+        if (config_.verbose) std::cout << "StatArbStrategy created: " << strategy_name_ << std::endl;
         coint_analyzer_ = std::make_unique<CointegrationAnalyzer>();
     }
     
@@ -419,11 +449,13 @@ public:
             // Register symbols for quick lookup
             symbol_pairs_[symbol1].push_back(symbol2);
             symbol_pairs_[symbol2].push_back(symbol1);
+            if (config_.verbose) std::cout << "Added pair: " << symbol1 << "-" << symbol2 << std::endl;
         }
     }
     
     // IStrategy interface implementation
     void calculateSignals(const MarketEvent& event) override {
+        if (config_.verbose) std::cout << "calculateSignals called for symbol: " << event.symbol << std::endl;
         // Update market data cache
         latest_market_data_[event.symbol] = event;
         
@@ -437,6 +469,10 @@ public:
         // Update volume tracking
         auto& avg_vol = average_volumes_[event.symbol];
         avg_vol = avg_vol * 0.95 + event.volume * 0.05;  // EMA of volume
+
+    // Debug: print per-symbol updated avg vol and latest price
+    if (config_.verbose) std::cout << "  Event: " << event.symbol << " close=" << event.close << " volume=" << event.volume \
+          << " avg_vol=" << avg_vol << std::endl;
         
         // Check all pairs involving this symbol
         auto pairs_it = symbol_pairs_.find(event.symbol);
@@ -466,6 +502,11 @@ public:
             
             // Only process if we have both prices
             if (pair.latest_price1 <= 0 || pair.latest_price2 <= 0) continue;
+
+            // Debug: print pair buffer sizes and latest prices
+            if (config_.verbose) std::cout << "    Pair check: " << pair.symbol1 << "-" << pair.symbol2 \
+                      << " prices1_sz=" << pair.prices1.size() << " prices2_sz=" << pair.prices2.size() \
+                      << " latest1=" << pair.latest_price1 << " latest2=" << pair.latest_price2 << std::endl;
             
             // Check if recalibration is needed
             pair.bars_since_recalibration++;
@@ -473,10 +514,13 @@ public:
                 recalibratePair(pair);
             }
             
-            // Generate trading signals
-            if (pair.prices1.size() >= config_.zscore_window && 
-                pair.prices2.size() >= config_.zscore_window) {
+            // Generate trading signals: ensure we have enough history for the effective z-score window
+            size_t effective_window = std::min(config_.zscore_window, config_.lookback_period);
+            if (pair.prices1.size() >= effective_window && pair.prices2.size() >= effective_window) {
+                if (config_.verbose) std::cout << "Calling generatePairSignals for " << pair.symbol1 << "-" << pair.symbol2 << " (effective_window=" << effective_window << ")" << std::endl;
                 generatePairSignals(pair, event);
+            } else {
+                if (config_.verbose) std::cout << "Insufficient history for pair " << pair.symbol1 << "-" << pair.symbol2 << ": " << pair.prices1.size() << "," << pair.prices2.size() << " needed=" << effective_window << std::endl;
             }
         }
     }
@@ -494,7 +538,12 @@ public:
     }
     
     void initialize() override {
-        reset();
+        std::cout << "StatArbStrategy initialized" << std::endl;
+        // Do not clear configured pairs here; only reset runtime counters and performance tracking
+        signals_generated_ = 0;
+        pairs_traded_ = 0;
+        recalibrations_ = 0;
+        total_pnl_ = 0.0;
     }
     
     void shutdown() override {
@@ -512,6 +561,22 @@ public:
                 signal.symbol = pair.symbol2;
                 emitSignal(signal);
             }
+        }
+
+        // Diagnostic dump: final pair buffer sizes and state
+        std::cout << "StatArbStrategy shutdown: pair diagnostics" << std::endl;
+        for (const auto& [key, pair] : active_pairs_) {
+            double avg1 = 0.0, avg2 = 0.0;
+            auto it1 = average_volumes_.find(pair.symbol1);
+            auto it2 = average_volumes_.find(pair.symbol2);
+            if (it1 != average_volumes_.end()) avg1 = it1->second;
+            if (it2 != average_volumes_.end()) avg2 = it2->second;
+            std::cout << "  Pair " << pair.symbol1 << "-" << pair.symbol2
+                      << " prices1_sz=" << pair.prices1.size()
+                      << " prices2_sz=" << pair.prices2.size()
+                      << " is_active=" << pair.is_active
+                      << " half_life=" << pair.half_life
+                      << " avg_vol1=" << avg1 << " avg_vol2=" << avg2 << std::endl;
         }
     }
     

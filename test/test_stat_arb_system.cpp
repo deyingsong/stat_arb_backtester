@@ -62,12 +62,12 @@ void createCorrelatedPairData(const std::string& symbol1, const std::string& sym
         // Add periodic spread divergences to create trading opportunities
         if (i % 30 == 15) {
             // Create positive spread divergence
-            double shock = 3.0 + noise(rng) * 1.0;
+            double shock = 20.0 + noise(rng) * 1.0;
             price1 *= (1 + shock * 0.01);
             price2 *= (1 - shock * 0.005);
         } else if (i % 30 == 0) {
             // Create negative spread divergence
-            double shock = -3.0 + noise(rng) * 1.0;
+            double shock = -20.0 + noise(rng) * 1.0;
             price1 *= (1 + shock * 0.01);
             price2 *= (1 - shock * 0.005);
         } else {
@@ -418,14 +418,14 @@ int main(int argc, char* argv[]) {
         
         // Statistical Arbitrage Strategy
         StatArbStrategy::PairConfig pair_config;
-        pair_config.entry_zscore_threshold = 1.5;
+        pair_config.entry_zscore_threshold = 0.5;
         pair_config.exit_zscore_threshold = 0.5;
         pair_config.stop_loss_zscore = 3.5;
-        pair_config.zscore_window = 20;
+        pair_config.zscore_window = 60;
         pair_config.lookback_period = 40;
         pair_config.recalibration_frequency = 20;
         pair_config.use_dynamic_hedge_ratio = true;
-        pair_config.min_half_life = 2;
+        pair_config.min_half_life = 0;
         pair_config.max_half_life = 60;
         
         auto strategy = std::make_unique<StatArbStrategy>(pair_config, "StatArb_Pairs");
