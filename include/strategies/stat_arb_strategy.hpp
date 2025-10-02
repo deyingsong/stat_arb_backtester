@@ -18,6 +18,7 @@
 #include "../core/exceptions.hpp"
 #include "../concurrent/disruptor_queue.hpp"
 #include "rolling_statistics.hpp"
+#include "simd_rolling_statistics.hpp"
 #include "cointegration_analyzer.hpp"
 #include <iostream>
 
@@ -96,7 +97,8 @@ public:
         double cointegration_pvalue = 1.0;
         
         // Rolling statistics
-        RollingStatistics spread_stats;
+        // RollingStatistics spread_stats;
+        SIMDRollingStatistics spread_stats;
         std::deque<double> spread_history;
         
         // Current state

@@ -1,10 +1,23 @@
 .
 ├── CMakeLists.txt
+├── Makefile.phase3
 ├── README.md
 ├── README_PHASE1.md
+├── bin
+│   ├── test_core_infrastructure
+│   ├── test_end_to_end_system
+│   ├── test_half_life
+│   ├── test_rolling_statistics
+│   ├── test_signal_generator
+│   └── test_stat_arb_system
+├── build_phase3.sh
 ├── data
 │   ├── AAPL.csv
 │   ├── GOOGL.csv
+│   ├── STOCK_A.csv
+│   ├── STOCK_B.csv
+│   ├── STOCK_C.csv
+│   ├── STOCK_D.csv
 │   └── prices.csv
 ├── include
 │   ├── backtester.hpp
@@ -24,6 +37,7 @@
 │   │   └── event_dispatcher.hpp
 │   ├── event_system.hpp
 │   ├── execution
+│   │   ├── advanced_execution_handler.hpp
 │   │   └── simulated_execution_handler.hpp
 │   ├── interfaces
 │   │   ├── data_handler.hpp
@@ -33,14 +47,20 @@
 │   ├── portfolio
 │   │   └── basic_portfolio.hpp
 │   └── strategies
-│       └── simple_ma_strategy.hpp
+│       ├── cointegration_analyzer.hpp
+│       ├── rolling_statistics.hpp
+│       ├── simple_ma_strategy.hpp
+│       └── stat_arb_strategy.hpp
 ├── repo_structure.txt
 ├── src
 │   └── main.cpp
 ├── test
 │   ├── test_core_infrastructure.cpp
 │   ├── test_end_to_end_system.cpp
-│   └── test_signal_generator.cpp
+│   ├── test_half_life.cpp
+│   ├── test_rolling_statistics.cpp
+│   ├── test_signal_generator.cpp
+│   └── test_stat_arb_system.cpp
 ├── test.cpp
 ├── test_phase1
 ├── test_phase2
@@ -49,4 +69,4 @@
     └── Eigen
         └── eigen.hpp
 
-16 directories, 34 files
+17 directories, 53 files

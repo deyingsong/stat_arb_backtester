@@ -9,6 +9,7 @@
 #include <numeric>
 #include <algorithm>
 #include <iostream>
+#include "../math/simd_math.hpp"
 
 namespace backtesting {
 
@@ -145,23 +146,29 @@ public:
         
         // Step 1: Calculate hedge ratio using OLS regression
         // Model: prices1 = α + β * prices2 + ε
-        double mean1 = std::accumulate(prices1.begin(), prices1.end(), 0.0) / prices1.size();
-        double mean2 = std::accumulate(prices2.begin(), prices2.end(), 0.0) / prices2.size();
+        // double mean1 = std::accumulate(prices1.begin(), prices1.end(), 0.0) / prices1.size();
+        // double mean2 = std::accumulate(prices2.begin(), prices2.end(), 0.0) / prices2.size();
         
-        double covariance = 0.0;
-        double variance2 = 0.0;
+        // double covariance = 0.0;
+        // double variance2 = 0.0;
         
-        for (size_t i = 0; i < prices1.size(); ++i) {
-            double diff1 = prices1[i] - mean1;
-            double diff2 = prices2[i] - mean2;
-            covariance += diff1 * diff2;
-            variance2 += diff2 * diff2;
-        }
+        // for (size_t i = 0; i < prices1.size(); ++i) {
+        //     double diff1 = prices1[i] - mean1;
+        //     double diff2 = prices2[i] - mean2;
+        //     covariance += diff1 * diff2;
+        //     variance2 += diff2 * diff2;
+        // }
         
-        if (variance2 > 1e-10) {
-            result.hedge_ratio = covariance / variance2;
-        } else {
-            return result;  // Cannot calculate hedge ratio
+        // if (variance2 > 1e-10) {
+        //     result.hedge_ratio = covariance / variance2;
+        // } else {
+        //     return result;  // Cannot calculate hedge ratio
+        // }
+        // Use SIMD-optimized method
+        result.hedge_ratio = calculateHedgeRatio(prices1, prices2);
+
+        if (result.hedge_ratio <= 0.0) {
+            return result;
         }
 
         // Debug: report hedge ratio
@@ -306,26 +313,56 @@ public:
             std::vector<double> window1(prices1.begin() + i - window_size, prices1.begin() + i);
             std::vector<double> window2(prices2.begin() + i - window_size, prices2.begin() + i);
             
-            // Calculate hedge ratio for this window
-            double mean1 = std::accumulate(window1.begin(), window1.end(), 0.0) / window_size;
-            double mean2 = std::accumulate(window2.begin(), window2.end(), 0.0) / window_size;
+            // // Calculate hedge ratio for this window
+            // double mean1 = std::accumulate(window1.begin(), window1.end(), 0.0) / window_size;
+            // double mean2 = std::accumulate(window2.begin(), window2.end(), 0.0) / window_size;
             
-            double covariance = 0.0;
-            double variance2 = 0.0;
+            // double covariance = 0.0;
+            // double variance2 = 0.0;
             
-            for (size_t j = 0; j < window_size; ++j) {
-                double diff1 = window1[j] - mean1;
-                double diff2 = window2[j] - mean2;
-                covariance += diff1 * diff2;
-                variance2 += diff2 * diff2;
-            }
+            // for (size_t j = 0; j < window_size; ++j) {
+            //     double diff1 = window1[j] - mean1;
+            //     double diff2 = window2[j] - mean2;
+            //     covariance += diff1 * diff2;
+            //     variance2 += diff2 * diff2;
+            // }
             
-            double hedge_ratio = (variance2 > 1e-10) ? (covariance / variance2) : 1.0;
+            // double hedge_ratio = (variance2 > 1e-10) ? (covariance / variance2) : 1.0;
+
+            // New: Use SIMD-optimized method
+            double hedge_ratio = calculateHedgeRatio(window1, window2);
+
             hedge_ratios.push_back(hedge_ratio);
         }
         
         return hedge_ratios;
     }
+
+    // NEW METHOD: Calculate optimal hedge ratio using OLS regression with SIMD
+    double calculateHedgeRatio(const std::vector<double>& prices1,
+                               const std::vector<double>& prices2) {
+        if (prices1.size() != prices2.size() || prices1.size() < 20) {
+            return 1.0;
+        }
+        
+        // SIMD-optimized mean calculation
+        double mean1 = simd::VectorOps::mean(prices1.data(), prices1.size());
+        double mean2 = simd::VectorOps::mean(prices2.data(), prices2.size());
+        
+        // Calculate covariance and variance
+        double covariance = 0.0;
+        double variance2 = 0.0;
+        
+        for (size_t i = 0; i < prices1.size(); ++i) {
+            double diff1 = prices1[i] - mean1;
+            double diff2 = prices2[i] - mean2;
+            covariance += diff1 * diff2;
+            variance2 += diff2 * diff2;
+        }
+        
+        return (variance2 > 1e-10) ? (covariance / variance2) : 1.0;
+    }
+
 };
 
 } // namespace backtesting

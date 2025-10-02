@@ -1,0 +1,181 @@
+# Makefile for Phase 4: Performance Optimizations
+# Optimized for Apple Silicon (ARM64) with aggressive optimization flags
+
+# Compiler detection
+CXX := $(shell command -v clang++ 2>/dev/null || command -v g++ 2>/dev/null)
+ifeq ($(CXX),)
+    $(error No C++ compiler found. Please install clang++ or g++)
+endif
+
+# Architecture detection
+ARCH := $(shell uname -m)
+ifeq ($(ARCH),arm64)
+    ARCH_FLAGS := -march=armv8-a+simd
+    $(info Building for Apple Silicon with NEON support)
+else ifeq ($(ARCH),aarch64)
+    ARCH_FLAGS := -march=armv8-a+simd
+    $(info Building for ARM64 with NEON support)
+else ifeq ($(ARCH),x86_64)
+    ARCH_FLAGS := -march=native
+    $(info Building for x86-64)
+else
+    ARCH_FLAGS :=
+    $(warning Unknown architecture: $(ARCH))
+endif
+
+# Compiler flags for maximum performance
+CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -pthread
+CXXFLAGS += $(ARCH_FLAGS)
+CXXFLAGS += -ffast-math          # Aggressive floating-point optimizations
+CXXFLAGS += -funroll-loops       # Automatic loop unrolling
+CXXFLAGS += -finline-functions   # Aggressive function inlining
+CXXFLAGS += -fomit-frame-pointer # Better register allocation
+
+# Clang-specific optimizations
+ifeq ($(findstring clang,$(CXX)),clang)
+    CXXFLAGS += -flto            # Link-time optimization
+    LDFLAGS += -flto
+endif
+
+# Include paths
+INCLUDES := -I./include
+
+# Directories
+BIN_DIR := bin
+TEST_DIR := test
+OBJ_DIR := obj
+
+# Create directories
+$(shell mkdir -p $(BIN_DIR) $(OBJ_DIR))
+
+# Test programs
+TESTS := test_phase4_performance \
+         test_memory_pool \
+         test_simd_operations \
+         test_integrated_system
+
+TEST_BINS := $(addprefix $(BIN_DIR)/,$(TESTS))
+
+# Default target
+.PHONY: all
+all: $(TEST_BINS)
+
+# Performance benchmark (main target)
+$(BIN_DIR)/test_phase4_performance: $(TEST_DIR)/test_phase4_performance.cpp
+	@echo "Compiling performance benchmark suite..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $< $(LDFLAGS)
+	@echo "✓ Built: $@"
+
+# Memory pool test
+$(BIN_DIR)/test_memory_pool: $(TEST_DIR)/test_memory_pool.cpp
+	@echo "Compiling memory pool test..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $< $(LDFLAGS)
+	@echo "✓ Built: $@"
+
+# SIMD operations test
+$(BIN_DIR)/test_simd_operations: $(TEST_DIR)/test_simd_operations.cpp
+	@echo "Compiling SIMD operations test..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $< $(LDFLAGS)
+	@echo "✓ Built: $@"
+
+# Integrated system test
+$(BIN_DIR)/test_integrated_system: $(TEST_DIR)/test_integrated_system.cpp
+	@echo "Compiling integrated system test..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $< $(LDFLAGS)
+	@echo "✓ Built: $@"
+
+# Run all benchmarks
+.PHONY: bench
+bench: $(BIN_DIR)/test_phase4_performance
+	@echo ""
+	@echo "=========================================="
+	@echo "Running Performance Benchmarks"
+	@echo "=========================================="
+	@$(BIN_DIR)/test_phase4_performance
+
+# Run all tests
+.PHONY: test
+test: $(TEST_BINS)
+	@echo ""
+	@echo "=========================================="
+	@echo "Running All Phase 4 Tests"
+	@echo "=========================================="
+	@for test in $(TEST_BINS); do \
+		echo ""; \
+		echo "Running $$test..."; \
+		$$test || exit 1; \
+	done
+	@echo ""
+	@echo "✓ All tests passed!"
+
+# Run specific test
+.PHONY: run-%
+run-%: $(BIN_DIR)/%
+	@echo "Running $<..."
+	@$<
+
+# Build with debug symbols for profiling
+.PHONY: profile
+profile: CXXFLAGS += -g -fno-omit-frame-pointer
+profile: clean all
+	@echo "Built with profiling support"
+	@echo "Run with: instruments -t 'Time Profiler' $(BIN_DIR)/test_phase4_performance"
+
+# Build with sanitizers for debugging
+.PHONY: sanitize
+sanitize: CXXFLAGS += -fsanitize=address -fsanitize=undefined -g
+sanitize: LDFLAGS += -fsanitize=address -fsanitize=undefined
+sanitize: clean all
+	@echo "Built with sanitizers enabled"
+
+# Generate assembly output for inspection
+.PHONY: asm
+asm: $(TEST_DIR)/test_phase4_performance.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -S -masm=intel -o $(BIN_DIR)/performance_benchmark.s $<
+	@echo "Assembly output: $(BIN_DIR)/performance_benchmark.s"
+
+# Clean build artifacts
+.PHONY: clean
+clean:
+	rm -rf $(BIN_DIR)/* $(OBJ_DIR)/*
+	@echo "Cleaned build artifacts"
+
+# Deep clean (including directories)
+.PHONY: distclean
+distclean: clean
+	rm -rf $(BIN_DIR) $(OBJ_DIR)
+	@echo "Cleaned all build directories"
+
+# Show build configuration
+.PHONY: config
+config:
+	@echo "Build Configuration:"
+	@echo "  Compiler:      $(CXX)"
+	@echo "  Architecture:  $(ARCH)"
+	@echo "  Arch Flags:    $(ARCH_FLAGS)"
+	@echo "  CXX Flags:     $(CXXFLAGS)"
+	@echo "  LD Flags:      $(LDFLAGS)"
+	@echo "  Include Path:  $(INCLUDES)"
+
+# Help target
+.PHONY: help
+help:
+	@echo "Phase 4 Performance Optimization Makefile"
+	@echo ""
+	@echo "Targets:"
+	@echo "  make              - Build all test programs"
+	@echo "  make bench        - Run performance benchmarks"
+	@echo "  make test         - Run all tests"
+	@echo "  make run-<test>   - Run specific test"
+	@echo "  make profile      - Build with profiling support"
+	@echo "  make sanitize     - Build with sanitizers"
+	@echo "  make asm          - Generate assembly output"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make config       - Show build configuration"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make bench                           # Run benchmarks"
+	@echo "  make run-test_memory_pool            # Run memory pool test"
+	@echo "  make profile && make run-bench       # Profile benchmarks"
+
+.DEFAULT_GOAL := all

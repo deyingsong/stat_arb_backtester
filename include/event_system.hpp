@@ -31,11 +31,45 @@
 #include "engine/event_dispatcher.hpp"  // Include event dispatcher
 #include "engine/cerebro.hpp"  // Include main engine
 #include "builders/event_builders.hpp"  // Include event builders
+#include "concurrent/memory_pool.hpp"  // Include enhanced memory pool
 #ifdef __x86_64__
     #include <immintrin.h>  //  For CPU pause instruction on x86/x64
 #endif
 
 namespace backtesting {
+
+// Global event pools
+static EnhancedMemoryPool<MarketEvent, 8192> market_pool;
+static EnhancedMemoryPool<SignalEvent, 4096> signal_pool;
+static EnhancedMemoryPool<OrderEvent, 4096> order_pool;
+
+class CerebEventFactory {
+public:
+    static MarketEvent* createMarketEvent() {
+        return market_pool.acquire();
+    }
+
+    static void releaseMarketEvent(MarketEvent* event) {
+        market_pool.release(event);
+    }
+
+    static SignalEvent* createSignalEvent() {
+        return signal_pool.acquire();
+    }
+
+    static void releaseSignalEvent(SignalEvent* event) {
+        signal_pool.release(event);
+    }
+
+    static OrderEvent* createOrderEvent() {
+        return order_pool.acquire();
+    }
+
+    static void releaseOrderEvent(OrderEvent* event) {
+        order_pool.release(event);
+    }
+};
+
 
 // ============================================================================
 // Forward Declarations
