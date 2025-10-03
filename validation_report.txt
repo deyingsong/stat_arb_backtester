@@ -1,0 +1,44 @@
+
+======================================================================
+BASIC PERFORMANCE METRICS
+======================================================================
+
+Observations:       1000
+Mean Return:        0.1313%
+Volatility:         1.5745%
+Sharpe Ratio:       0.0834
+Sortino Ratio:      0.0867
+
+Annualized Metrics:
+  Return:           33.0779%
+  Volatility:       24.9943%
+  Sharpe Ratio:     1.3234
+
+======================================================================
+DEFLATED SHARPE RATIO ANALYSIS
+======================================================================
+
+Number of Trials:   100
+Observed Sharpe:    0.0834
+Expected Max SR₀:   0.0525
+Sharpe Std Error:   0.0317
+
+Deflated Sharpe:    0.9729
+Probabilistic SR:   99.6%
+P-value:            0.3306
+Significant (α=5%): NO ✗
+
+Distribution Moments:
+  Skewness:         0.0304
+  Kurtosis:         -0.1344
+
+======================================================================
+DEPLOYMENT DECISION
+======================================================================
+
+RECOMMENDATION: DO NOT DEPLOY ✗
+
+The strategy likely suffers from overfitting to historical data.
+There is high probability of poor out-of-sample performance.
+
+Reason: Deflated Sharpe ratio is not statistically significant (p-value = 0.330585)

@@ -1,16 +1,24 @@
 .
 ├── CMakeLists.txt
 ├── Makefile.phase3
+├── Makefile.phase4
 ├── README.md
 ├── README_PHASE1.md
+├── README_PHASE4.md
 ├── bin
 │   ├── test_core_infrastructure
 │   ├── test_end_to_end_system
 │   ├── test_half_life
+│   ├── test_integrated_system
+│   ├── test_memory_pool
+│   ├── test_phase4_performance
 │   ├── test_rolling_statistics
+│   ├── test_rolling_statitics
 │   ├── test_signal_generator
+│   ├── test_simd_operations
 │   └── test_stat_arb_system
 ├── build_phase3.sh
+├── build_phase4.sh
 ├── data
 │   ├── AAPL.csv
 │   ├── GOOGL.csv
@@ -25,8 +33,10 @@
 │   │   └── event_builders.hpp
 │   ├── concurrent
 │   │   ├── disruptor_queue.hpp
-│   │   └── event_pool.hpp
+│   │   ├── event_pool.hpp
+│   │   └── memory_pool.hpp
 │   ├── core
+│   │   ├── branch_hints.hpp
 │   │   ├── event_types.hpp
 │   │   └── exceptions.hpp
 │   ├── data
@@ -44,11 +54,14 @@
 │   │   ├── execution_handler.hpp
 │   │   ├── portfolio.hpp
 │   │   └── strategy.hpp
+│   ├── math
+│   │   └── simd_math.hpp
 │   ├── portfolio
 │   │   └── basic_portfolio.hpp
 │   └── strategies
 │       ├── cointegration_analyzer.hpp
 │       ├── rolling_statistics.hpp
+│       ├── simd_rolling_statistics.hpp
 │       ├── simple_ma_strategy.hpp
 │       └── stat_arb_strategy.hpp
 ├── repo_structure.txt
@@ -58,8 +71,12 @@
 │   ├── test_core_infrastructure.cpp
 │   ├── test_end_to_end_system.cpp
 │   ├── test_half_life.cpp
+│   ├── test_integrated_system.cpp
+│   ├── test_memory_pool.cpp
+│   ├── test_phase4_performance.cpp
 │   ├── test_rolling_statistics.cpp
 │   ├── test_signal_generator.cpp
+│   ├── test_simd_operations.cpp
 │   └── test_stat_arb_system.cpp
 ├── test.cpp
 ├── test_phase1
@@ -69,4 +86,4 @@
     └── Eigen
         └── eigen.hpp
 
-17 directories, 53 files
+18 directories, 69 files

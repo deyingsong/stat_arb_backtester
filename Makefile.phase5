@@ -1,0 +1,73 @@
+# Makefile.phase5
+# Phase 5: Advanced Statistical Validation
+# Builds Purged Cross-Validation and Deflated Sharpe Ratio modules
+
+CXX = clang++
+CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -pthread
+INCLUDES = -I./include
+BIN_DIR = bin
+TEST_DIR = test
+
+# Detect ARM vs x86
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_M),arm64)
+    ARCH_FLAGS = -march=armv8-a+simd
+else ifeq ($(UNAME_M),aarch64)
+    ARCH_FLAGS = -march=armv8-a+simd
+else ifeq ($(UNAME_M),x86_64)
+    ARCH_FLAGS = -march=native
+else
+    ARCH_FLAGS =
+endif
+
+CXXFLAGS += $(ARCH_FLAGS)
+
+# Additional optimization flags
+CXXFLAGS += -ffast-math -funroll-loops -finline-functions
+
+# Targets
+.PHONY: all clean phase5 validation directories
+
+all: directories phase5
+
+directories:
+	@mkdir -p $(BIN_DIR)
+	@mkdir -p include/validation
+
+phase5: $(BIN_DIR)/test_phase5_validation
+
+# Phase 5 test executable
+$(BIN_DIR)/test_phase5_validation: $(TEST_DIR)/test_phase5_validation.cpp \
+                                    include/validation/purged_cross_validation.hpp \
+                                    include/validation/deflated_sharpe_ratio.hpp
+	@echo "Compiling Phase 5 validation tests..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $<
+	@echo "✓ Phase 5 validation compiled successfully"
+
+# Run validation tests
+test: $(BIN_DIR)/test_phase5_validation
+	@echo ""
+	@echo "Running Phase 5 validation tests..."
+	@echo ""
+	@./$(BIN_DIR)/test_phase5_validation
+
+# Clean build artifacts
+clean:
+	@rm -f $(BIN_DIR)/test_phase5_validation
+	@echo "✓ Phase 5 build artifacts cleaned"
+
+# Help target
+help:
+	@echo "Phase 5: Advanced Statistical Validation"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  make all      - Build all Phase 5 components"
+	@echo "  make phase5   - Build Phase 5 validation tools"
+	@echo "  make test     - Run Phase 5 validation tests"
+	@echo "  make clean    - Remove build artifacts"
+	@echo ""
+	@echo "Implemented features:"
+	@echo "  • Purged K-Fold Cross-Validation"
+	@echo "  • Combinatorial Purged CV (CPCV)"
+	@echo "  • Deflated Sharpe Ratio (DSR)"
+	@echo "  • Multiple Testing Adjustments"
