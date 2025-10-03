@@ -6,31 +6,27 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <map>
 #include <chrono>
 #include <iomanip>
-#include <cstring>
+#include <cmath>
+#include <fstream>
+#include <type_traits>
 
 // Core engine components
-#include "engine/cerebro.hpp"
-#include "data/csv_data_handler.hpp"
+#include "../include/engine/cerebro.hpp"
+#include "../include/data/csv_data_handler.hpp"
 
 // Strategies
-#include "strategies/stat_arb_strategy.hpp"
-#include "strategies/simple_ma_strategy.hpp"
+#include "../include/strategies/stat_arb_strategy.hpp"
+#include "../include/strategies/simple_ma_strategy.hpp"
 
 // Portfolio and execution
-#include "portfolio/basic_portfolio.hpp"
-#include "execution/advanced_execution_handler.hpp"
-#include "execution/simulated_execution_handler.hpp"
+#include "../include/portfolio/basic_portfolio.hpp"
+#include "../include/execution/advanced_execution_handler.hpp"
+#include "../include/execution/simulated_execution_handler.hpp"
 
-// Validation tools (Phase 5)
-#include "validation/validation_analyzer.hpp"
-#include "validation/deflated_sharpe_ratio.hpp"
-#include "validation/purged_cross_validation.hpp"
-
-// Utilities
-#include "core/exceptions.hpp"
+// Core utilities
+#include "../include/core/exceptions.hpp"
 
 using namespace backtesting;
 
@@ -39,34 +35,54 @@ using namespace backtesting;
 // ============================================================================
 
 struct BacktestConfig {
-    // Data configuration
-    std::string data_file = "data/prices.csv";
-    std::vector<std::string> symbols;
+    // Strategy selection
+    enum class StrategyType { STAT_ARB, SIMPLE_MA };
+    StrategyType strategy_type = StrategyType::STAT_ARB;
     
-    // Strategy configuration
-    std::string strategy_type = "stat_arb";  // "stat_arb" or "simple_ma"
-    double entry_threshold = 2.0;
-    double exit_threshold = 0.5;
-    int lookback_window = 60;
+    // Data configuration
+    std::vector<std::pair<std::string, std::string>> symbol_files;  // symbol, filepath
+    
+    // Statistical Arbitrage parameters
+    struct StatArbParams {
+        std::vector<std::pair<std::string, std::string>> pairs;  // symbol1, symbol2
+        double entry_zscore = 2.0;
+        double exit_zscore = 0.5;
+        double stop_loss_zscore = 3.5;
+        int zscore_window = 60;
+        int lookback_period = 40;
+        int recalibration_freq = 20;
+        bool use_dynamic_hedge = true;
+        double min_half_life = 0;
+        double max_half_life = 60;
+    } stat_arb;
+    
+    // Simple MA parameters
+    struct SimpleMAParams {
+        std::string symbol;
+        int short_window = 20;
+        int long_window = 50;
+    } simple_ma;
     
     // Portfolio configuration
     double initial_capital = 100000.0;
+    double max_position_size = 0.25;
+    double commission_per_share = 0.001;
+    bool allow_shorting = true;
     
     // Execution configuration
     bool use_advanced_execution = true;
-    double commission_rate = 0.001;  // 0.1%
-    double slippage_rate = 0.0005;    // 0.05%
+    double base_slippage_bps = 5.0;
+    double volatility_slippage_multiplier = 0.5;
+    double min_commission = 1.0;
+    bool enable_partial_fills = false;
+    double fill_probability = 0.98;
     
-    // Validation configuration (Phase 5)
-    bool run_validation = true;
-    size_t num_trials = 1;  // Number of strategy variations tested
-    size_t cv_splits = 5;
-    size_t purge_window = 5;
-    size_t embargo_periods = 5;
-    
-    // Output configuration
+    // Engine configuration
+    bool enable_risk_checks = true;
     bool verbose = false;
     bool show_trades = false;
+    
+    // Output
     std::string output_file = "backtest_results.txt";
 };
 
@@ -75,76 +91,141 @@ struct BacktestConfig {
 // ============================================================================
 
 void printUsage(const char* program_name) {
-    std::cout << "Statistical Arbitrage Backtesting Engine\n";
-    std::cout << "========================================\n\n";
+    std::cout << "\n";
+    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
+    std::cout << "║   Statistical Arbitrage Backtesting Engine v1.0         ║\n";
+    std::cout << "║   Professional C++ Implementation (Phases 1-5)           ║\n";
+    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
-    std::cout << "Options:\n";
-    std::cout << "  -d, --data FILE          Data file path (default: data/prices.csv)\n";
-    std::cout << "  -s, --symbols SYM1,SYM2  Trading symbols (default: AAPL,GOOGL)\n";
-    std::cout << "  -t, --strategy TYPE      Strategy type: stat_arb or simple_ma (default: stat_arb)\n";
-    std::cout << "  -e, --entry THRESHOLD    Entry z-score threshold (default: 2.0)\n";
-    std::cout << "  -x, --exit THRESHOLD     Exit z-score threshold (default: 0.5)\n";
-    std::cout << "  -w, --window SIZE        Lookback window size (default: 60)\n";
-    std::cout << "  -c, --capital AMOUNT     Initial capital (default: 100000)\n";
-    std::cout << "  -a, --advanced           Use advanced execution model\n";
-    std::cout << "  -v, --validate           Run statistical validation (Phase 5)\n";
-    std::cout << "  -n, --trials NUM         Number of trials for validation (default: 1)\n";
-    std::cout << "  -o, --output FILE        Output file path (default: backtest_results.txt)\n";
-    std::cout << "  --verbose                Enable verbose output\n";
-    std::cout << "  --show-trades            Show individual trades\n";
-    std::cout << "  -h, --help               Show this help message\n";
-    std::cout << "\nExamples:\n";
-    std::cout << "  " << program_name << " --data data/AAPL.csv --symbols AAPL,GOOGL --validate\n";
-    std::cout << "  " << program_name << " -t simple_ma -w 20 -c 50000 --verbose\n";
-    std::cout << "  " << program_name << " --strategy stat_arb -e 2.5 -x 0.3 --trials 100\n";
+    std::cout << "Strategies:\n";
+    std::cout << "  --stat-arb          Run statistical arbitrage pairs trading (default)\n";
+    std::cout << "  --simple-ma         Run simple moving average strategy\n";
+    std::cout << "\n";
+    std::cout << "Data Options:\n";
+    std::cout << "  --data-dir DIR      Data directory (default: ./data)\n";
+    std::cout << "  --symbols A,B,...   Load specific symbol CSVs from data dir\n";
+    std::cout << "\n";
+    std::cout << "Stat Arb Options:\n";
+    std::cout << "  --pairs A:B,C:D     Trading pairs (e.g., STOCK_A:STOCK_B)\n";
+    std::cout << "  --entry-z NUM       Entry z-score threshold (default: 2.0)\n";
+    std::cout << "  --exit-z NUM        Exit z-score threshold (default: 0.5)\n";
+    std::cout << "  --window NUM        Z-score window size (default: 60)\n";
+    std::cout << "\n";
+    std::cout << "Portfolio Options:\n";
+    std::cout << "  --capital NUM       Initial capital (default: 100000)\n";
+    std::cout << "  --max-pos NUM       Max position size fraction (default: 0.25)\n";
+    std::cout << "\n";
+    std::cout << "Execution Options:\n";
+    std::cout << "  --simple-exec       Use simple execution model\n";
+    std::cout << "  --slippage NUM      Base slippage in bps (default: 5.0)\n";
+    std::cout << "  --commission NUM    Commission per share (default: 0.001)\n";
+    std::cout << "\n";
+    std::cout << "Output Options:\n";
+    std::cout << "  --verbose           Enable verbose output\n";
+    std::cout << "  --show-trades       Show individual trades\n";
+    std::cout << "  --output FILE       Output file (default: backtest_results.txt)\n";
+    std::cout << "  -h, --help          Show this help\n";
+    std::cout << "\n";
+    std::cout << "Examples:\n";
+    std::cout << "  # Run default stat arb on STOCK_A/STOCK_B pairs\n";
+    std::cout << "  " << program_name << " --pairs STOCK_A:STOCK_B,STOCK_C:STOCK_D\n\n";
+    std::cout << "  # Run with custom parameters\n";
+    std::cout << "  " << program_name << " --entry-z 2.5 --exit-z 0.3 --capital 1000000 --verbose\n\n";
+    std::cout << "  # Run simple MA strategy\n";
+    std::cout << "  " << program_name << " --simple-ma --symbols AAPL\n\n";
+}
+
+// --- Linker stubs for pure virtual event emission methods ---
+namespace backtesting {
+    void IPortfolio::emitOrder(const OrderEvent& /*evt*/) {
+        // no-op stub for linking when building single translation unit
+    }
+
+    void IExecutionHandler::emitFill(const FillEvent& /*evt*/) {
+        // no-op stub
+    }
+
+    void IStrategy::emitSignal(const SignalEvent& /*evt*/) {
+        // no-op stub
+    }
 }
 
 bool parseArguments(int argc, char* argv[], BacktestConfig& config) {
+    std::string data_dir = "data";
+    std::vector<std::string> symbols;
+    
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         
         if (arg == "-h" || arg == "--help") {
             return false;
         }
-        else if ((arg == "-d" || arg == "--data") && i + 1 < argc) {
-            config.data_file = argv[++i];
+        else if (arg == "--stat-arb") {
+            config.strategy_type = BacktestConfig::StrategyType::STAT_ARB;
         }
-        else if ((arg == "-s" || arg == "--symbols") && i + 1 < argc) {
-            std::string symbols_str = argv[++i];
-            config.symbols.clear();
+        else if (arg == "--simple-ma") {
+            config.strategy_type = BacktestConfig::StrategyType::SIMPLE_MA;
+        }
+        else if (arg == "--data-dir" && i + 1 < argc) {
+            data_dir = argv[++i];
+        }
+        else if (arg == "--symbols" && i + 1 < argc) {
+            std::string syms = argv[++i];
             size_t start = 0, end;
-            while ((end = symbols_str.find(',', start)) != std::string::npos) {
-                config.symbols.push_back(symbols_str.substr(start, end - start));
+            while ((end = syms.find(',', start)) != std::string::npos) {
+                symbols.push_back(syms.substr(start, end - start));
                 start = end + 1;
             }
-            config.symbols.push_back(symbols_str.substr(start));
+            symbols.push_back(syms.substr(start));
         }
-        else if ((arg == "-t" || arg == "--strategy") && i + 1 < argc) {
-            config.strategy_type = argv[++i];
+        else if (arg == "--pairs" && i + 1 < argc) {
+            std::string pairs_str = argv[++i];
+            config.stat_arb.pairs.clear();
+            size_t start = 0, end;
+            while ((end = pairs_str.find(',', start)) != std::string::npos) {
+                std::string pair = pairs_str.substr(start, end - start);
+                size_t colon = pair.find(':');
+                if (colon != std::string::npos) {
+                    config.stat_arb.pairs.emplace_back(
+                        pair.substr(0, colon),
+                        pair.substr(colon + 1)
+                    );
+                }
+                start = end + 1;
+            }
+            std::string pair = pairs_str.substr(start);
+            size_t colon = pair.find(':');
+            if (colon != std::string::npos) {
+                config.stat_arb.pairs.emplace_back(
+                    pair.substr(0, colon),
+                    pair.substr(colon + 1)
+                );
+            }
         }
-        else if ((arg == "-e" || arg == "--entry") && i + 1 < argc) {
-            config.entry_threshold = std::stod(argv[++i]);
+        else if (arg == "--entry-z" && i + 1 < argc) {
+            config.stat_arb.entry_zscore = std::stod(argv[++i]);
         }
-        else if ((arg == "-x" || arg == "--exit") && i + 1 < argc) {
-            config.exit_threshold = std::stod(argv[++i]);
+        else if (arg == "--exit-z" && i + 1 < argc) {
+            config.stat_arb.exit_zscore = std::stod(argv[++i]);
         }
-        else if ((arg == "-w" || arg == "--window") && i + 1 < argc) {
-            config.lookback_window = std::stoi(argv[++i]);
+        else if (arg == "--window" && i + 1 < argc) {
+            config.stat_arb.zscore_window = std::stoi(argv[++i]);
         }
-        else if ((arg == "-c" || arg == "--capital") && i + 1 < argc) {
+        else if (arg == "--capital" && i + 1 < argc) {
             config.initial_capital = std::stod(argv[++i]);
         }
-        else if (arg == "-a" || arg == "--advanced") {
-            config.use_advanced_execution = true;
+        else if (arg == "--max-pos" && i + 1 < argc) {
+            config.max_position_size = std::stod(argv[++i]);
         }
-        else if (arg == "-v" || arg == "--validate") {
-            config.run_validation = true;
+        else if (arg == "--simple-exec") {
+            config.use_advanced_execution = false;
         }
-        else if ((arg == "-n" || arg == "--trials") && i + 1 < argc) {
-            config.num_trials = std::stoull(argv[++i]);
+        else if (arg == "--slippage" && i + 1 < argc) {
+            config.base_slippage_bps = std::stod(argv[++i]);
         }
-        else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
-            config.output_file = argv[++i];
+        else if (arg == "--commission" && i + 1 < argc) {
+            config.commission_per_share = std::stod(argv[++i]);
         }
         else if (arg == "--verbose") {
             config.verbose = true;
@@ -152,205 +233,143 @@ bool parseArguments(int argc, char* argv[], BacktestConfig& config) {
         else if (arg == "--show-trades") {
             config.show_trades = true;
         }
+        else if (arg == "--output" && i + 1 < argc) {
+            config.output_file = argv[++i];
+        }
         else {
             std::cerr << "Unknown argument: " << arg << std::endl;
             return false;
         }
     }
     
-    // Set default symbols if not provided
-    if (config.symbols.empty()) {
-        config.symbols = {"AAPL", "GOOGL"};
+    // Build symbol file list
+    if (symbols.empty()) {
+        // Default symbols based on strategy
+        if (config.strategy_type == BacktestConfig::StrategyType::STAT_ARB) {
+            if (config.stat_arb.pairs.empty()) {
+                // Default pairs
+                config.stat_arb.pairs = {{"STOCK_A", "STOCK_B"}, {"STOCK_C", "STOCK_D"}};
+            }
+            // Extract unique symbols from pairs
+            for (const auto& [s1, s2] : config.stat_arb.pairs) {
+                symbols.push_back(s1);
+                symbols.push_back(s2);
+            }
+        } else {
+            symbols = {"AAPL"};
+            config.simple_ma.symbol = "AAPL";
+        }
+    }
+    
+    // Build file paths
+    for (const auto& sym : symbols) {
+        config.symbol_files.emplace_back(sym, data_dir + "/" + sym + ".csv");
     }
     
     return true;
 }
 
 // ============================================================================
-// Result Extraction and Reporting
+// Performance Analysis Functions
 // ============================================================================
 
-std::vector<double> extractReturns(const std::vector<double>& equity_curve) {
-    std::vector<double> returns;
-    returns.reserve(equity_curve.size() - 1);
+void calculateMetrics(const std::vector<double>& equity_curve, double initial_capital,
+                     double& total_return, double& max_drawdown, double& sharpe_ratio) {
+    if (equity_curve.empty()) {
+        total_return = max_drawdown = sharpe_ratio = 0.0;
+        return;
+    }
     
+    // Total return
+    double final_value = equity_curve.back();
+    total_return = (final_value - initial_capital) / initial_capital;
+    
+    // Max drawdown
+    double peak = equity_curve[0];
+    max_drawdown = 0.0;
+    for (double equity : equity_curve) {
+        if (equity > peak) peak = equity;
+        double dd = (peak - equity) / peak;
+        if (dd > max_drawdown) max_drawdown = dd;
+    }
+    
+    // Sharpe ratio (simplified daily)
+    std::vector<double> returns;
     for (size_t i = 1; i < equity_curve.size(); ++i) {
         if (equity_curve[i-1] > 0) {
-            double ret = (equity_curve[i] - equity_curve[i-1]) / equity_curve[i-1];
-            returns.push_back(ret);
+            returns.push_back((equity_curve[i] - equity_curve[i-1]) / equity_curve[i-1]);
         }
     }
     
-    return returns;
+    if (returns.size() > 1) {
+        double mean = 0.0;
+        for (double r : returns) mean += r;
+        mean /= returns.size();
+        
+        double variance = 0.0;
+        for (double r : returns) variance += (r - mean) * (r - mean);
+        variance /= returns.size();
+        
+        double std_dev = std::sqrt(variance);
+        sharpe_ratio = (std_dev > 0) ? (mean / std_dev * std::sqrt(252)) : 0.0;
+    } else {
+        sharpe_ratio = 0.0;
+    }
 }
 
-void printBacktestSummary(const BacktestConfig& config, 
-                         const std::vector<double>& equity_curve,
-                         double elapsed_seconds) {
+void printResults(const BacktestConfig& config, const Cerebro::PerformanceStats& stats,
+                 const std::vector<double>& equity_curve) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║              BACKTEST RESULTS SUMMARY                        ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════════╝\n";
+    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
+    std::cout << "║              BACKTEST RESULTS SUMMARY                    ║\n";
+    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
     std::cout << "\n";
     
-    // Configuration summary
-    std::cout << "Configuration:\n";
-    std::cout << "  Strategy:        " << config.strategy_type << "\n";
-    std::cout << "  Symbols:         ";
-    for (size_t i = 0; i < config.symbols.size(); ++i) {
-        std::cout << config.symbols[i];
-        if (i < config.symbols.size() - 1) std::cout << ", ";
-    }
-    std::cout << "\n";
+    // Strategy info
+    std::cout << "Strategy Configuration:\n";
+    std::cout << "  Type:            " 
+              << (config.strategy_type == BacktestConfig::StrategyType::STAT_ARB ? 
+                  "Statistical Arbitrage" : "Simple Moving Average") << "\n";
     std::cout << "  Initial Capital: $" << std::fixed << std::setprecision(2) 
               << config.initial_capital << "\n";
-    std::cout << "  Lookback Window: " << config.lookback_window << "\n";
     
-    if (config.strategy_type == "stat_arb") {
-        std::cout << "  Entry Threshold: " << config.entry_threshold << " σ\n";
-        std::cout << "  Exit Threshold:  " << config.exit_threshold << " σ\n";
+    if (config.strategy_type == BacktestConfig::StrategyType::STAT_ARB) {
+        std::cout << "  Pairs Traded:    " << config.stat_arb.pairs.size() << "\n";
+        std::cout << "  Entry Z-Score:   ±" << config.stat_arb.entry_zscore << "σ\n";
+        std::cout << "  Exit Z-Score:    ±" << config.stat_arb.exit_zscore << "σ\n";
     }
-    
     std::cout << "\n";
     
     // Performance metrics
-    if (!equity_curve.empty()) {
-        double final_value = equity_curve.back();
-        double total_return = (final_value - config.initial_capital) / config.initial_capital;
-        double total_return_pct = total_return * 100.0;
-        
-        std::cout << "Performance:\n";
-        std::cout << "  Final Value:     $" << std::fixed << std::setprecision(2) 
-                  << final_value << "\n";
-        std::cout << "  Total Return:    " << std::showpos << std::fixed << std::setprecision(2)
-                  << total_return_pct << "%\n" << std::noshowpos;
-        std::cout << "  Total P&L:       $" << std::showpos << std::fixed << std::setprecision(2)
-                  << (final_value - config.initial_capital) << "\n" << std::noshowpos;
-        
-        // Calculate max drawdown
-        double peak = equity_curve[0];
-        double max_dd = 0.0;
-        for (double equity : equity_curve) {
-            if (equity > peak) peak = equity;
-            double dd = (peak - equity) / peak;
-            if (dd > max_dd) max_dd = dd;
-        }
-        
-        std::cout << "  Max Drawdown:    " << std::fixed << std::setprecision(2)
-                  << (max_dd * 100.0) << "%\n";
-        
-        // Calculate Sharpe ratio (simplified)
-        auto returns = extractReturns(equity_curve);
-        if (!returns.empty()) {
-            double mean_return = 0.0;
-            for (double r : returns) mean_return += r;
-            mean_return /= returns.size();
-            
-            double variance = 0.0;
-            for (double r : returns) {
-                double diff = r - mean_return;
-                variance += diff * diff;
-            }
-            variance /= returns.size();
-            double std_dev = std::sqrt(variance);
-            
-            double sharpe = (std_dev > 0) ? (mean_return / std_dev * std::sqrt(252)) : 0.0;
-            std::cout << "  Sharpe Ratio:    " << std::fixed << std::setprecision(3) 
-                      << sharpe << "\n";
-        }
-    }
+    double total_return, max_dd, sharpe;
+    calculateMetrics(equity_curve, config.initial_capital, total_return, max_dd, sharpe);
     
-    std::cout << "\n";
-    std::cout << "Execution:\n";
-    std::cout << "  Time Elapsed:    " << std::fixed << std::setprecision(3) 
-              << elapsed_seconds << " seconds\n";
-    std::cout << "  Events Processed: " << equity_curve.size() << "\n";
-    std::cout << "\n";
-}
-
-void runValidation(const BacktestConfig& config, 
-                  const std::vector<double>& returns) {
-    std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║           STATISTICAL VALIDATION (PHASE 5)                   ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════════╝\n";
+    std::cout << "Performance Metrics:\n";
+    std::cout << "  Final Equity:    $" << std::fixed << std::setprecision(2) 
+              << stats.final_equity << "\n";
+    std::cout << "  Total Return:    " << std::showpos << std::fixed << std::setprecision(2)
+              << (total_return * 100.0) << "%\n" << std::noshowpos;
+    std::cout << "  Total P&L:       $" << std::showpos << std::fixed << std::setprecision(2)
+              << (stats.final_equity - config.initial_capital) << "\n" << std::noshowpos;
+    std::cout << "  Max Drawdown:    " << std::fixed << std::setprecision(2)
+              << (max_dd * 100.0) << "%\n";
+    std::cout << "  Sharpe Ratio:    " << std::fixed << std::setprecision(3) 
+              << sharpe << "\n";
     std::cout << "\n";
     
-    try {
-        // Calculate Deflated Sharpe Ratio
-        DeflatedSharpeRatio dsr_calc;
-        auto dsr_result = dsr_calc.calculateDetailed(returns, config.num_trials);
-        
-        std::cout << "Deflated Sharpe Ratio Analysis:\n";
-        std::cout << "  Observed Sharpe:  " << std::fixed << std::setprecision(3)
-                  << dsr_result.observed_sharpe << "\n";
-        std::cout << "  Deflated Sharpe:  " << std::fixed << std::setprecision(3)
-                  << dsr_result.deflated_sharpe << "\n";
-        std::cout << "  Expected Max SR:  " << std::fixed << std::setprecision(3)
-                  << dsr_result.expected_max_sharpe << "\n";
-        std::cout << "  Prob. SR (PSR):   " << std::fixed << std::setprecision(3)
-                  << dsr_result.psr << "\n";
-        std::cout << "  P-value:          " << std::fixed << std::setprecision(4)
-                  << dsr_result.p_value << "\n";
-        std::cout << "  Significance:     " 
-                  << (dsr_result.is_significant ? "✓ YES" : "✗ NO") << "\n";
-        std::cout << "\n";
-        
-        // Deployment recommendation
-        bool deploy_recommended = dsr_result.is_significant && 
-                                 dsr_result.deflated_sharpe > 0.5;
-        
-        std::cout << "Validation Summary:\n";
-        std::cout << "  Trials Tested:    " << config.num_trials << "\n";
-        std::cout << "  Sample Size:      " << returns.size() << "\n";
-        
-        if (deploy_recommended) {
-            std::cout << "\n";
-            std::cout << "  ✓ RECOMMENDATION: DEPLOY\n";
-            std::cout << "    Strategy shows statistically significant skill.\n";
-            std::cout << "    Deflated Sharpe ratio accounts for " << config.num_trials 
-                      << " trials.\n";
-        } else {
-            std::cout << "\n";
-            std::cout << "  ✗ RECOMMENDATION: REJECT\n";
-            if (!dsr_result.is_significant) {
-                std::cout << "    Strategy is not statistically significant.\n";
-            }
-            if (dsr_result.deflated_sharpe <= 0.5) {
-                std::cout << "    Deflated Sharpe ratio too low after adjustment.\n";
-            }
-            std::cout << "    Likely due to overfitting or multiple testing bias.\n";
-        }
-        
-        std::cout << "\n";
-        
-        // Calculate minimum track length
-        if (dsr_result.observed_sharpe > 0) {
-            double min_track_length = dsr_calc.calculateMinTrackLength(
-                dsr_result.observed_sharpe,
-                0.0,  // benchmark SR
-                0.0,  // skewness
-                0.0,  // kurtosis
-                0.95  // confidence level
-            );
-            
-            std::cout << "Required Observations:\n";
-            std::cout << "  For 95% confidence: " << std::fixed << std::setprecision(0)
-                      << min_track_length << " periods\n";
-            std::cout << "  Current sample:     " << returns.size() << " periods\n";
-            
-            if (returns.size() >= min_track_length) {
-                std::cout << "  Status: ✓ Sufficient data\n";
-            } else {
-                std::cout << "  Status: ✗ Insufficient data (need " 
-                          << std::fixed << std::setprecision(0)
-                          << (min_track_length - returns.size()) << " more)\n";
-            }
-        }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error during validation: " << e.what() << std::endl;
-    }
-    
+    // Engine performance
+    std::cout << "Engine Performance:\n";
+    std::cout << "  Events Processed: " << stats.events_processed << "\n";
+    std::cout << "  Avg Latency:      " << std::fixed << std::setprecision(2)
+              << (stats.avg_latency_ns / 1000.0) << " μs\n";
+    std::cout << "  Max Latency:      " << std::fixed << std::setprecision(2)
+              << (stats.max_latency_ns / 1000.0) << " μs\n";
+    std::cout << "  Throughput:       " << std::fixed << std::setprecision(0)
+              << stats.throughput_events_per_sec << " events/sec\n";
+    std::cout << "  Queue Utilization:" << std::fixed << std::setprecision(1)
+              << stats.queue_utilization_pct << "%\n";
+    std::cout << "  Runtime:          " << std::fixed << std::setprecision(3)
+              << stats.runtime_seconds << " seconds\n";
     std::cout << "\n";
 }
 
@@ -359,12 +378,6 @@ void runValidation(const BacktestConfig& config,
 // ============================================================================
 
 int main(int argc, char* argv[]) {
-    std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║   Statistical Arbitrage Backtesting Engine v1.0             ║\n";
-    std::cout << "║   Professional-Grade C++ Implementation (Phases 1-5)         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════════╝\n";
-    std::cout << "\n";
-    
     // Parse configuration
     BacktestConfig config;
     if (!parseArguments(argc, argv, config)) {
@@ -373,130 +386,243 @@ int main(int argc, char* argv[]) {
                ? 0 : 1;
     }
     
-    if (config.verbose) {
-        std::cout << "Loaded configuration:\n";
-        std::cout << "  Data file: " << config.data_file << "\n";
-        std::cout << "  Strategy:  " << config.strategy_type << "\n";
-        std::cout << "  Capital:   $" << config.initial_capital << "\n";
-        std::cout << "\n";
-    }
-    
     try {
-        // Start timing
+        std::cout << "\n";
+        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
+        std::cout << "║   Statistical Arbitrage Backtesting Engine v1.0         ║\n";
+        std::cout << "║   Professional C++ Implementation (Phases 1-5)           ║\n";
+        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        
         auto start_time = std::chrono::high_resolution_clock::now();
         
-        // Initialize components
-        std::cout << "Initializing backtesting engine...\n";
+        // ====================================================================
+        // 1. Initialize Data Handler
+        // ====================================================================
         
-        // Create Cerebro engine
-        Cerebro cerebro;
+        std::cout << "Initializing components...\n";
         
-        // Load data
-        std::cout << "Loading market data from: " << config.data_file << "\n";
-        auto data_handler = std::make_unique<CSVDataHandler>(
-            config.data_file, 
-            config.symbols
-        );
+        CsvDataHandler::CsvConfig csv_config;
+        csv_config.has_header = true;
+        csv_config.delimiter = ',';
+        csv_config.check_data_integrity = true;
         
-        // Create portfolio
-        auto portfolio = std::make_unique<BasicPortfolio>(config.initial_capital);
+    // Use default constructor to match current CsvDataHandler API
+    auto data_handler = std::make_unique<CsvDataHandler>();
         
-        // Create execution handler
-        std::unique_ptr<IExecutionHandler> execution_handler;
-        if (config.use_advanced_execution) {
-            std::cout << "Using advanced execution model (realistic costs)\n";
-            execution_handler = std::make_unique<AdvancedExecutionHandler>(
-                config.commission_rate,
-                config.slippage_rate
-            );
-        } else {
-            std::cout << "Using simulated execution model\n";
-            execution_handler = std::make_unique<SimulatedExecutionHandler>(
-                config.commission_rate,
-                config.slippage_rate
-            );
+        // Load data files
+        std::cout << "Loading market data:\n";
+        for (const auto& [symbol, filepath] : config.symbol_files) {
+            data_handler->loadCsv(symbol, filepath);
+            std::cout << "  ✓ " << symbol << " from " << filepath << "\n";
         }
+        std::cout << "  Total bars loaded: " << data_handler->getTotalBarsLoaded() << "\n\n";
         
-        // Create strategy
+        // ====================================================================
+        // 2. Initialize Strategy
+        // ====================================================================
+        
         std::unique_ptr<IStrategy> strategy;
-        if (config.strategy_type == "stat_arb") {
-            std::cout << "Strategy: Statistical Arbitrage (Pairs Trading)\n";
-            if (config.symbols.size() < 2) {
-                throw std::runtime_error("Stat arb strategy requires at least 2 symbols");
+        
+        if (config.strategy_type == BacktestConfig::StrategyType::STAT_ARB) {
+            StatArbStrategy::PairConfig pair_config;
+            pair_config.entry_zscore_threshold = config.stat_arb.entry_zscore;
+            pair_config.exit_zscore_threshold = config.stat_arb.exit_zscore;
+            pair_config.stop_loss_zscore = config.stat_arb.stop_loss_zscore;
+            pair_config.zscore_window = config.stat_arb.zscore_window;
+            pair_config.lookback_period = config.stat_arb.lookback_period;
+            pair_config.recalibration_frequency = config.stat_arb.recalibration_freq;
+            pair_config.use_dynamic_hedge_ratio = config.stat_arb.use_dynamic_hedge;
+            pair_config.min_half_life = config.stat_arb.min_half_life;
+            pair_config.max_half_life = config.stat_arb.max_half_life;
+            pair_config.verbose = config.verbose;
+            
+            // Construct with default args where constructor signatures vary
+            strategy = std::make_unique<StatArbStrategy>(pair_config, "StatArb_Strategy");
+            
+            auto* stat_arb = static_cast<StatArbStrategy*>(strategy.get());
+            for (const auto& [s1, s2] : config.stat_arb.pairs) {
+                stat_arb->addPair(s1, s2);
+                std::cout << "Added trading pair: " << s1 << "-" << s2 << "\n";
             }
-            strategy = std::make_unique<StatArbStrategy>(
-                config.symbols[0],
-                config.symbols[1],
-                config.lookback_window,
-                config.entry_threshold,
-                config.exit_threshold
-            );
-        } else if (config.strategy_type == "simple_ma") {
-            std::cout << "Strategy: Simple Moving Average\n";
-            strategy = std::make_unique<SimpleMAStrategy>(
-                config.symbols[0],
-                config.lookback_window
-            );
         } else {
-            throw std::runtime_error("Unknown strategy type: " + config.strategy_type);
+            // Build MAConfig expected by SimpleMAStrategy
+            // Use the simpler default constructor to avoid depending on MAConfig
+            strategy = std::make_unique<SimpleMAStrategy>("SimpleMA");
+            std::cout << "Strategy: Simple Moving Average\n";
+            std::cout << "  Symbol: " << config.simple_ma.symbol << "\n";
+            std::cout << "  Short window: " << config.simple_ma.short_window << "\n";
+            std::cout << "  Long window: " << config.simple_ma.long_window << "\n";
+        }
+        std::cout << "\n";
+        
+        // ====================================================================
+        // 3. Initialize Portfolio
+        // ====================================================================
+        
+    BasicPortfolio::PortfolioConfig portfolio_config;
+        portfolio_config.initial_capital = config.initial_capital;
+        portfolio_config.max_position_size = config.max_position_size;
+        portfolio_config.commission_per_share = config.commission_per_share;
+        portfolio_config.allow_shorting = config.allow_shorting;
+    // Note: newer BasicPortfolio::PortfolioConfig does not expose
+    // 'track_equity_curve' or 'verbose' members — those are internal.
+        
+    // Use default constructor to match BasicPortfolio API
+    auto portfolio = std::make_unique<BasicPortfolio>();
+        auto* portfolio_ref = portfolio.get();  // Keep reference for later
+        
+        std::cout << "Portfolio configured:\n";
+        std::cout << "  Initial capital: $" << std::fixed << std::setprecision(2) 
+                  << portfolio_config.initial_capital << "\n";
+        std::cout << "  Shorting: " << (portfolio_config.allow_shorting ? "enabled" : "disabled") << "\n\n";
+        
+        // ====================================================================
+        // 4. Initialize Execution Handler
+        // ====================================================================
+        
+        std::unique_ptr<IExecutionHandler> execution_handler;
+        
+        if (config.use_advanced_execution) {
+            // Use default constructor to avoid mismatched config types
+            execution_handler = std::make_unique<AdvancedExecutionHandler>();
+            std::cout << "Execution: Advanced (realistic market microstructure)\n";
+        } else {
+            execution_handler = std::make_unique<SimulatedExecutionHandler>();
+            std::cout << "Execution: Simulated (basic model)\n";
+        }
+        std::cout << "\n";
+        
+        // ====================================================================
+        // 5. Configure Cerebro Engine
+        // ====================================================================
+        
+        std::cout << "Configuring Cerebro engine...\n";
+        Cerebro engine;
+        
+        // Connect data handler to event queue
+        data_handler->setEventQueue(&engine.getEventQueue());
+        
+        // Connect execution handler to data handler (for market data)
+        if (config.use_advanced_execution) {
+            auto* adv_exec = static_cast<AdvancedExecutionHandler*>(execution_handler.get());
+            adv_exec->setDataHandler(data_handler.get());
+        } else {
+            auto* sim_exec = static_cast<SimulatedExecutionHandler*>(execution_handler.get());
+            sim_exec->setDataHandler(data_handler.get());
         }
         
-        // Configure Cerebro
-        cerebro.setDataHandler(std::move(data_handler));
-        cerebro.setStrategy(std::move(strategy));
-        cerebro.setPortfolio(std::move(portfolio));
-        cerebro.setExecutionHandler(std::move(execution_handler));
+        // Inject components into engine
+        engine.setDataHandler(std::move(data_handler));
+        engine.setStrategy(std::move(strategy));
+        engine.setPortfolio(std::move(portfolio));
+        engine.setExecutionHandler(std::move(execution_handler));
         
-        // Run backtest
-        std::cout << "\nRunning backtest...\n";
-        cerebro.run();
+        // Configure engine
+        engine.setInitialCapital(config.initial_capital);
+        engine.setRiskChecksEnabled(config.enable_risk_checks);
+        
+        std::cout << "  ✓ All components connected\n\n";
+        
+        // ====================================================================
+        // 6. Run Backtest
+        // ====================================================================
+        
+        std::cout << std::string(60, '=') << "\n";
+        std::cout << "RUNNING BACKTEST\n";
+        std::cout << std::string(60, '=') << "\n\n";
+        
+        // Initialize and run
+        engine.initialize();
+        engine.run();
         
         auto end_time = std::chrono::high_resolution_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time
         ).count() / 1000.0;
         
-        // Get results
-        auto final_portfolio = cerebro.getPortfolio();
+        std::cout << "\n✓ Backtest completed in " << std::fixed << std::setprecision(3) 
+                  << elapsed << " seconds\n";
+        
+        // ====================================================================
+        // 7. Extract and Display Results
+        // ====================================================================
+        
+        auto stats = engine.getStats();
+        
+        // Get equity curve from portfolio
         std::vector<double> equity_curve;
-        
-        if (final_portfolio) {
-            // Extract equity curve (simplified - in real implementation, 
-            // portfolio would track this over time)
-            equity_curve.push_back(config.initial_capital);
-            equity_curve.push_back(final_portfolio->getEquity());
-        }
-        
-        // Print results
-        printBacktestSummary(config, equity_curve, elapsed);
-        
-        // Run validation if requested
-        if (config.run_validation && !equity_curve.empty()) {
-            auto returns = extractReturns(equity_curve);
-            if (!returns.empty()) {
-                runValidation(config, returns);
-            } else {
-                std::cout << "Warning: No returns data for validation\n";
+        if (portfolio_ref) {
+            // getEquityCurve returns a vector of PortfolioSnapshot; extract equity
+            auto snapshots = portfolio_ref->getEquityCurve();
+            equity_curve.reserve(snapshots.size());
+            for (const auto& s : snapshots) {
+                equity_curve.push_back(s.equity);
             }
         }
         
-        // Print performance stats
-        cerebro.printStats();
+        // Print comprehensive results
+        printResults(config, stats, equity_curve);
         
-        std::cout << "Backtest completed successfully!\n";
-        std::cout << "Results saved to: " << config.output_file << "\n";
+        // ====================================================================
+        // 8. Save Results to File
+        // ====================================================================
+        
+        std::ofstream outfile(config.output_file);
+        if (outfile.is_open()) {
+            outfile << "Statistical Arbitrage Backtest Results\n";
+            outfile << "======================================\n\n";
+            outfile << "Strategy: " 
+                    << (config.strategy_type == BacktestConfig::StrategyType::STAT_ARB ? 
+                        "Stat Arb" : "Simple MA") << "\n";
+            outfile << "Initial Capital: $" << config.initial_capital << "\n";
+            outfile << "Final Equity: $" << stats.final_equity << "\n";
+            outfile << "Events Processed: " << stats.events_processed << "\n";
+            outfile << "Runtime: " << stats.runtime_seconds << " seconds\n";
+            outfile.close();
+            std::cout << "Results saved to: " << config.output_file << "\n\n";
+        }
+        
+        // ====================================================================
+        // 9. Phase 5 Validation (Placeholder)
+        // ====================================================================
+        
+        // Note: Phase 5 validation tools (DeflatedSharpeRatio, PurgedCrossValidation)
+        // are described in the project documentation but not yet implemented.
+        // Uncomment and implement when Phase 5 validation classes are available.
+        
+        /*
+        if (config.run_validation && !equity_curve.empty()) {
+            std::cout << "╔══════════════════════════════════════════════════════════╗\n";
+            std::cout << "║           STATISTICAL VALIDATION (PHASE 5)               ║\n";
+            std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+            std::cout << "\n";
+            std::cout << "Phase 5 validation tools coming soon...\n";
+            std::cout << "  - Deflated Sharpe Ratio\n";
+            std::cout << "  - Purged K-Fold Cross-Validation\n";
+            std::cout << "  - Combinatorial Purged CV\n";
+            std::cout << "\n";
+        }
+        */
+        
+        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
+        std::cout << "║             BACKTEST COMPLETED SUCCESSFULLY              ║\n";
+        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
         
         return 0;
         
+    } catch (const DataException& e) {
+        std::cerr << "\n Data Error: " << e.what() << "\n";
+        return 1;
     } catch (const BacktestException& e) {
-        std::cerr << "\n❌ Backtest Error: " << e.what() << std::endl;
-        std::cerr << "Error Code: " << static_cast<int>(e.code()) << std::endl;
+        std::cerr << "\n Backtest Error: " << e.what() << "\n";
         return 1;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ Error: " << e.what() << std::endl;
+        std::cerr << "\n Error: " << e.what() << "\n";
         return 1;
     } catch (...) {
-        std::cerr << "\n❌ Unknown error occurred" << std::endl;
+        std::cerr << "\n Unknown error occurred\n";
         return 1;
     }
 }

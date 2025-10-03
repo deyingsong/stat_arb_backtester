@@ -1,0 +1,8 @@
+Statistical Arbitrage Backtest Results
+======================================
+
+Strategy: Stat Arb
+Initial Capital: $100000
+Final Equity: $100000
+Events Processed: 800
+Runtime: 0 seconds
