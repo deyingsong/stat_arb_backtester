@@ -63,6 +63,12 @@ private:
     }
     
 public:
+    // Default constructor for container compatibility (uses default window size)
+    SIMDRollingStatistics()
+        : window_size_(60) {
+        buffer_.reserve(window_size_);
+    }
+
     explicit SIMDRollingStatistics(size_t window_size)
         : window_size_(window_size) {
         buffer_.reserve(window_size);

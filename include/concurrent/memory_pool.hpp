@@ -33,7 +33,10 @@ public:
         // Return all cached objects to global pool
         for (size_t i = 0; i < count_; ++i) {
             if (cache_[i]) {
-                ::operator delete(cache_[i]);
+                // Only destroy the object in-place. Do NOT free the memory here.
+                // Memory may be owned by the global pool; freeing it here can
+                // result in a double free when the pool also reuses/frees it.
+                cache_[i]->~T();
             }
         }
     }
@@ -69,10 +72,10 @@ private:
     static constexpr size_t CACHE_LINE_SIZE = 64;
     
     struct alignas(CACHE_LINE_SIZE) PoolNode {
-        union {
-            T object;
-            PoolNode* next;
-        };
+        // Use raw, properly aligned storage for T so PoolNode remains
+        // default-constructible even when T has non-trivial constructors.
+        alignas(alignof(T)) unsigned char storage[sizeof(T)];
+        PoolNode* next;
         std::atomic<bool> in_use{false};
     };
     
@@ -175,9 +178,9 @@ public:
             pool_hits_.fetch_add(1, std::memory_order_relaxed);
             uint64_t current = current_usage_.fetch_add(1, std::memory_order_relaxed) + 1;
             update_peak_usage(current);
-            
-            new (&node->object) T(std::forward<Args>(args)...);
-            return &node->object;
+            // Construct T in the node's storage and return its pointer.
+            new (static_cast<void*>(node)) T(std::forward<Args>(args)...);
+            return reinterpret_cast<T*>(node);
         }
         
         // Pool exhausted - fallback to heap allocation

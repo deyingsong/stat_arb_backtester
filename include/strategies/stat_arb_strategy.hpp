@@ -150,6 +150,10 @@ private:
     uint64_t pairs_traded_ = 0;
     uint64_t recalibrations_ = 0;
     double total_pnl_ = 0.0;
+
+    // Performance counters
+    std::atomic<uint64_t> total_latency_ns_{0};
+    std::atomic<uint64_t> event_count_{0};
     
     // Helpers
     DisruptorQueue<EventVariant, 65536>* getEventQueue() {
@@ -457,6 +461,7 @@ public:
     
     // IStrategy interface implementation
     void calculateSignals(const MarketEvent& event) override {
+        auto start = std::chrono::high_resolution_clock::now();
         if (config_.verbose) std::cout << "calculateSignals called for symbol: " << event.symbol << std::endl;
         // Update market data cache
         latest_market_data_[event.symbol] = event;
@@ -525,6 +530,15 @@ public:
                 if (config_.verbose) std::cout << "Insufficient history for pair " << pair.symbol1 << "-" << pair.symbol2 << ": " << pair.prices1.size() << "," << pair.prices2.size() << " needed=" << effective_window << std::endl;
             }
         }
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            end - start
+        ).count();
+
+        total_latency_ns_ += latency;
+        event_count_++;
+
     }
     
     void reset() override {
@@ -579,6 +593,20 @@ public:
                       << " is_active=" << pair.is_active
                       << " half_life=" << pair.half_life
                       << " avg_vol1=" << avg1 << " avg_vol2=" << avg2 << std::endl;
+        }
+    }
+
+    void printPerformanceStats() const {
+        uint64_t count = event_count_.load();
+        uint64_t total = total_latency_ns_.load();
+
+        if (count > 0) {
+            double avg_ns = static_cast<double>(total) / count;
+            std::cout << "Strategy Performance:\\n";
+            std::cout << "  Average latency: " << avg_ns << " ns\\n";
+            std::cout << "  Events processed: " << count << "\\n";
+            std::cout << "  Throughput: "
+                      << (1e9 / avg_ns) << " events/sec\\n";
         }
     }
     

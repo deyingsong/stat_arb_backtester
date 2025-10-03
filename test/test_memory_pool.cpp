@@ -6,6 +6,7 @@
 #include <vector>
 #include <atomic>
 #include <chrono>
+#include <iomanip>
 #include "../include/concurrent/memory_pool.hpp"
 
 using namespace backtesting;
